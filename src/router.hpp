@@ -39,40 +39,35 @@
 #include "msg.hpp"
 #include "fq.hpp"
 
-namespace zmq
-{
+namespace zmq {
 class ctx_t;
 class pipe_t;
 
 //  TODO: This class uses O(n) scheduling. Rewrite it to use O(1) algorithm.
 class router_t : public routing_socket_base_t
 {
-  public:
-    router_t (zmq::ctx_t *parent_, uint32_t tid_, int sid_);
-    ~router_t () ZMQ_OVERRIDE;
+public:
+    router_t(zmq::ctx_t *parent_, uint32_t tid_, int sid_);
+    ~router_t() ZMQ_OVERRIDE;
 
     //  Overrides of functions from socket_base_t.
-    void xattach_pipe (zmq::pipe_t *pipe_,
-                       bool subscribe_to_all_,
-                       bool locally_initiated_) ZMQ_FINAL;
-    int
-    xsetsockopt (int option_, const void *optval_, size_t optvallen_) ZMQ_FINAL;
-    int xsend (zmq::msg_t *msg_) ZMQ_OVERRIDE;
-    int xrecv (zmq::msg_t *msg_) ZMQ_OVERRIDE;
-    bool xhas_in () ZMQ_OVERRIDE;
-    bool xhas_out () ZMQ_OVERRIDE;
-    void xread_activated (zmq::pipe_t *pipe_) ZMQ_FINAL;
-    void xpipe_terminated (zmq::pipe_t *pipe_) ZMQ_FINAL;
-    int get_peer_state (const void *routing_id_,
-                        size_t routing_id_size_) const ZMQ_FINAL;
+    void xattach_pipe(zmq::pipe_t *pipe_, bool subscribe_to_all_, bool locally_initiated_) ZMQ_FINAL;
+    int xsetsockopt(int option_, const void *optval_, size_t optvallen_) ZMQ_FINAL;
+    int xsend(zmq::msg_t *msg_) ZMQ_OVERRIDE;
+    int xrecv(zmq::msg_t *msg_) ZMQ_OVERRIDE;
+    bool xhas_in() ZMQ_OVERRIDE;
+    bool xhas_out() ZMQ_OVERRIDE;
+    void xread_activated(zmq::pipe_t *pipe_) ZMQ_FINAL;
+    void xpipe_terminated(zmq::pipe_t *pipe_) ZMQ_FINAL;
+    int get_peer_state(const void *routing_id_, size_t routing_id_size_) const ZMQ_FINAL;
 
-  protected:
+protected:
     //  Rollback any message parts that were sent but not yet flushed.
-    int rollback ();
+    int rollback();
 
-  private:
+private:
     //  Receive peer id and update lookup map
-    bool identify_peer (pipe_t *pipe_, bool locally_initiated_);
+    bool identify_peer(pipe_t *pipe_, bool locally_initiated_);
 
     //  Fair queueing object for inbound pipes.
     fq_t _fq;
@@ -125,8 +120,8 @@ class router_t : public routing_socket_base_t
     // will be terminated.
     bool _handover;
 
-    ZMQ_NON_COPYABLE_NOR_MOVABLE (router_t)
+    ZMQ_NON_COPYABLE_NOR_MOVABLE(router_t)
 };
-}
+} // namespace zmq
 
 #endif

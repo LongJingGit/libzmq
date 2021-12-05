@@ -43,8 +43,7 @@
 #include "msg.hpp"
 #include "tcp.hpp"
 
-namespace zmq
-{
+namespace zmq {
 class io_thread_t;
 class session_base_t;
 class mechanism_t;
@@ -54,79 +53,96 @@ class mechanism_t;
 
 class stream_engine_base_t : public io_object_t, public i_engine
 {
-  public:
-    stream_engine_base_t (fd_t fd_,
-                          const options_t &options_,
-                          const endpoint_uri_pair_t &endpoint_uri_pair_,
-                          bool has_handshake_stage_);
-    ~stream_engine_base_t () ZMQ_OVERRIDE;
+public:
+    stream_engine_base_t(fd_t fd_, const options_t &options_, const endpoint_uri_pair_t &endpoint_uri_pair_, bool has_handshake_stage_);
+    ~stream_engine_base_t() ZMQ_OVERRIDE;
 
     //  i_engine interface implementation.
-    bool has_handshake_stage () ZMQ_FINAL { return _has_handshake_stage; };
-    void plug (zmq::io_thread_t *io_thread_,
-               zmq::session_base_t *session_) ZMQ_FINAL;
-    void terminate () ZMQ_FINAL;
-    bool restart_input () ZMQ_FINAL;
-    void restart_output () ZMQ_FINAL;
-    void zap_msg_available () ZMQ_FINAL;
-    const endpoint_uri_pair_t &get_endpoint () const ZMQ_FINAL;
+    bool has_handshake_stage() ZMQ_FINAL
+    {
+        return _has_handshake_stage;
+    };
+    void plug(zmq::io_thread_t *io_thread_, zmq::session_base_t *session_) ZMQ_FINAL;
+    void terminate() ZMQ_FINAL;
+    bool restart_input() ZMQ_FINAL;
+    void restart_output() ZMQ_FINAL;
+    void zap_msg_available() ZMQ_FINAL;
+    const endpoint_uri_pair_t &get_endpoint() const ZMQ_FINAL;
 
     //  i_poll_events interface implementation.
-    void in_event () ZMQ_FINAL;
-    void out_event ();
-    void timer_event (int id_) ZMQ_FINAL;
+    void in_event() ZMQ_FINAL;
+    void out_event();
+    void timer_event(int id_) ZMQ_FINAL;
 
-  protected:
+protected:
     typedef metadata_t::dict_t properties_t;
-    bool init_properties (properties_t &properties_);
+    bool init_properties(properties_t &properties_);
 
     //  Function to handle network disconnections.
-    virtual void error (error_reason_t reason_);
+    virtual void error(error_reason_t reason_);
 
-    int next_handshake_command (msg_t *msg_);
-    int process_handshake_command (msg_t *msg_);
+    int next_handshake_command(msg_t *msg_);
+    int process_handshake_command(msg_t *msg_);
 
-    int pull_msg_from_session (msg_t *msg_);
-    int push_msg_to_session (msg_t *msg_);
+    int pull_msg_from_session(msg_t *msg_);
+    int push_msg_to_session(msg_t *msg_);
 
-    int pull_and_encode (msg_t *msg_);
-    virtual int decode_and_push (msg_t *msg_);
-    int push_one_then_decode_and_push (msg_t *msg_);
+    int pull_and_encode(msg_t *msg_);
+    virtual int decode_and_push(msg_t *msg_);
+    int push_one_then_decode_and_push(msg_t *msg_);
 
-    void set_handshake_timer ();
+    void set_handshake_timer();
 
-    virtual bool handshake () { return true; };
-    virtual void plug_internal (){};
-
-    virtual int process_command_message (msg_t *msg_)
+    virtual bool handshake()
     {
-        LIBZMQ_UNUSED (msg_);
+        return true;
+    };
+    virtual void plug_internal(){};
+
+    virtual int process_command_message(msg_t *msg_)
+    {
+        LIBZMQ_UNUSED(msg_);
         return -1;
     };
-    virtual int produce_ping_message (msg_t *msg_)
+    virtual int produce_ping_message(msg_t *msg_)
     {
-        LIBZMQ_UNUSED (msg_);
+        LIBZMQ_UNUSED(msg_);
         return -1;
     };
-    virtual int process_heartbeat_message (msg_t *msg_)
+    virtual int process_heartbeat_message(msg_t *msg_)
     {
-        LIBZMQ_UNUSED (msg_);
+        LIBZMQ_UNUSED(msg_);
         return -1;
     };
-    virtual int produce_pong_message (msg_t *msg_)
+    virtual int produce_pong_message(msg_t *msg_)
     {
-        LIBZMQ_UNUSED (msg_);
+        LIBZMQ_UNUSED(msg_);
         return -1;
     };
 
-    virtual int read (void *data, size_t size_);
-    virtual int write (const void *data_, size_t size_);
+    virtual int read(void *data, size_t size_);
+    virtual int write(const void *data_, size_t size_);
 
-    void reset_pollout () { io_object_t::reset_pollout (_handle); }
-    void set_pollout () { io_object_t::set_pollout (_handle); }
-    void set_pollin () { io_object_t::set_pollin (_handle); }
-    session_base_t *session () { return _session; }
-    socket_base_t *socket () { return _socket; }
+    void reset_pollout()
+    {
+        io_object_t::reset_pollout(_handle);
+    }
+    void set_pollout()
+    {
+        io_object_t::set_pollout(_handle);
+    }
+    void set_pollin()
+    {
+        io_object_t::set_pollin(_handle);
+    }
+    session_base_t *session()
+    {
+        return _session;
+    }
+    socket_base_t *socket()
+    {
+        return _socket;
+    }
 
     const options_t _options;
 
@@ -140,8 +156,8 @@ class stream_engine_base_t : public io_object_t, public i_engine
 
     mechanism_t *_mechanism;
 
-    int (stream_engine_base_t::*_next_msg) (msg_t *msg_);
-    int (stream_engine_base_t::*_process_msg) (msg_t *msg_);
+    int (stream_engine_base_t::*_next_msg)(msg_t *msg_);
+    int (stream_engine_base_t::*_process_msg)(msg_t *msg_);
 
     //  Metadata to be attached to received messages. May be NULL.
     metadata_t *_metadata;
@@ -175,21 +191,20 @@ class stream_engine_base_t : public io_object_t, public i_engine
     bool _has_timeout_timer;
     bool _has_heartbeat_timer;
 
-
     const std::string _peer_address;
 
-  private:
-    bool in_event_internal ();
+private:
+    bool in_event_internal();
 
     //  Unplug the engine from the session.
-    void unplug ();
+    void unplug();
 
-    int write_credential (msg_t *msg_);
+    int write_credential(msg_t *msg_);
 
-    void mechanism_ready ();
+    void mechanism_ready();
 
     //  Underlying socket.
-    fd_t _s;
+    fd_t _s;            // 连接 socket，engine 通过该 socket 与内核交换数据
 
     handle_t _handle;
 
@@ -198,24 +213,24 @@ class stream_engine_base_t : public io_object_t, public i_engine
     //  When true, we are still trying to determine whether
     //  the peer is using versioned protocol, and if so, which
     //  version.  When false, normal message flow has started.
-    bool _handshaking;
+    bool _handshaking;  // 在构造函数中被初始化成了 true
 
     msg_t _tx_msg;
 
     bool _io_error;
 
     //  The session this engine is attached to.
-    zmq::session_base_t *_session;
+    zmq::session_base_t *_session; // stream_engine_base_t::plug 时将创建的 session 和 engine 绑定到了一起
 
     //  Socket
-    zmq::socket_base_t *_socket;
+    zmq::socket_base_t *_socket;        // 本端 socket
 
     //  Indicate if engine has an handshake stage, if it does, engine must call session.engine_ready
     //  when handshake is completed.
-    bool _has_handshake_stage;
+    bool _has_handshake_stage;// 如果创建的是非原生的 engine，则初始化为 true；如果是原生 engine，则初始化为 false。两者使用不同的数据接收流程
 
-    ZMQ_NON_COPYABLE_NOR_MOVABLE (stream_engine_base_t)
+    ZMQ_NON_COPYABLE_NOR_MOVABLE(stream_engine_base_t)
 };
-}
+} // namespace zmq
 
 #endif

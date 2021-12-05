@@ -29,79 +29,90 @@
 
 #include "testutil.hpp"
 #include "testutil_unity.hpp"
+#include <iostream>
 
 SETUP_TEARDOWN_TESTCONTEXT
 
-void test (const char *address)
+void test(const char *address)
 {
     //  Create a router
-    void *router = test_context_socket (ZMQ_ROUTER);
+    void *router = test_context_socket(ZMQ_ROUTER);
     char my_endpoint[MAX_SOCKET_STRING];
 
     //  set router socket options
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (router, ZMQ_HELLO_MSG, "H", 1));
+    TEST_ASSERT_SUCCESS_ERRNO(zmq_setsockopt(router, ZMQ_HELLO_MSG, "H", 1));
 
     //  bind router
-    test_bind (router, address, my_endpoint, MAX_SOCKET_STRING);
+    test_bind(router, address, my_endpoint, MAX_SOCKET_STRING);
 
     //  Create a dealer
-    void *dealer = test_context_socket (ZMQ_DEALER);
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (dealer, my_endpoint));
+    void *dealer = test_context_socket(ZMQ_DEALER);
+    TEST_ASSERT_SUCCESS_ERRNO(zmq_connect(dealer, my_endpoint));
 
     // Receive the hello message
-    recv_string_expect_success (dealer, "H", 0);
+    recv_string_expect_success(dealer, "H", 0);
 
     //  Clean up.
-    test_context_socket_close (dealer);
-    test_context_socket_close (router);
+    test_context_socket_close(dealer);
+    test_context_socket_close(router);
 }
 
-void test_tcp ()
+void test_tcp()
 {
-    test ("tcp://127.0.0.1:*");
+    test("tcp://127.0.0.1:*");
 }
 
-void test_inproc ()
+void test_inproc()
 {
-    test ("inproc://hello-msg");
+    test("inproc://hello-msg");
 }
 
-void test_inproc_late_bind ()
+void test_inproc_late_bind()
 {
     char address[] = "inproc://late-hello-msg";
 
     //  Create a server
-    void *server = test_context_socket (ZMQ_SERVER);
+    void *server = test_context_socket(ZMQ_SERVER);
 
     //  set server socket options
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (server, ZMQ_HELLO_MSG, "W", 1));
+    TEST_ASSERT_SUCCESS_ERRNO(zmq_setsockopt(server, ZMQ_HELLO_MSG, "W", 1));
 
     //  Create a dealer
-    void *client = test_context_socket (ZMQ_CLIENT);
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (client, ZMQ_HELLO_MSG, "H", 1));
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (client, address));
+    void *client = test_context_socket(ZMQ_CLIENT);
+    TEST_ASSERT_SUCCESS_ERRNO(zmq_setsockopt(client, ZMQ_HELLO_MSG, "H", 1));
+    TEST_ASSERT_SUCCESS_ERRNO(zmq_connect(client, address));
 
     //  bind server after the dealer
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_bind (server, address));
+    TEST_ASSERT_SUCCESS_ERRNO(zmq_bind(server, address));
 
     // Receive the welcome message from server
-    recv_string_expect_success (client, "W", 0);
+    recv_string_expect_success(client, "W", 0);
 
     // Receive the hello message from client
-    recv_string_expect_success (server, "H", 0);
+    recv_string_expect_success(server, "H", 0);
 
     //  Clean up.
-    test_context_socket_close (client);
-    test_context_socket_close (server);
+    test_context_socket_close(client);
+    test_context_socket_close(server);
 }
 
-int main ()
+// 数据恢复请求
+struct dataRecoverReq
 {
-    setup_test_environment ();
+    uint32_t step_size = 100; // 核心分片进行数据恢复时，每一次恢复的数据量。默认值 100，如果超过 100，则核心会限制为 100
+    uint32_t time_out = 20;   // 数据恢复时，协议转换等待每一包数据的超时时间，单位s。默认值20s
+    uint32_t sequence_no = 1; // 从当前序号开始进行数据恢复（必填）
+};
 
-    UNITY_BEGIN ();
-    RUN_TEST (test_tcp);
-    RUN_TEST (test_inproc);
-    RUN_TEST (test_inproc_late_bind);
-    return UNITY_END ();
+#include <memory>
+#include <cstring>
+int main()
+{
+    setup_test_environment();
+
+    UNITY_BEGIN();
+    RUN_TEST(test_tcp);
+    // RUN_TEST(test_inproc);
+    // RUN_TEST(test_inproc_late_bind);
+    return UNITY_END();
 }

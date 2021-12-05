@@ -34,89 +34,96 @@
 
 #include <algorithm>
 
-zmq::mailbox_safe_t::mailbox_safe_t (mutex_t *sync_) : _sync (sync_)
+zmq::mailbox_safe_t::mailbox_safe_t(mutex_t *sync_)
+    : _sync(sync_)
 {
     //  Get the pipe into passive state. That way, if the users starts by
     //  polling on the associated file descriptor it will get woken up when
     //  new command is posted.
-    const bool ok = _cpipe.check_read ();
-    zmq_assert (!ok);
+    const bool ok = _cpipe.check_read();
+    zmq_assert(!ok);
 }
 
-zmq::mailbox_safe_t::~mailbox_safe_t ()
+zmq::mailbox_safe_t::~mailbox_safe_t()
 {
     //  TODO: Retrieve and deallocate commands inside the cpipe.
 
     // Work around problem that other threads might still be in our
     // send() method, by waiting on the mutex before disappearing.
-    _sync->lock ();
-    _sync->unlock ();
+    _sync->lock();
+    _sync->unlock();
 }
 
-void zmq::mailbox_safe_t::add_signaler (signaler_t *signaler_)
+void zmq::mailbox_safe_t::add_signaler(signaler_t *signaler_)
 {
-    _signalers.push_back (signaler_);
+    _signalers.push_back(signaler_);
 }
 
-void zmq::mailbox_safe_t::remove_signaler (signaler_t *signaler_)
+void zmq::mailbox_safe_t::remove_signaler(signaler_t *signaler_)
 {
     // TODO: make a copy of array and signal outside the lock
-    const std::vector<zmq::signaler_t *>::iterator end = _signalers.end ();
-    const std::vector<signaler_t *>::iterator it =
-      std::find (_signalers.begin (), end, signaler_);
+    const std::vector<zmq::signaler_t *>::iterator end = _signalers.end();
+    const std::vector<signaler_t *>::iterator it = std::find(_signalers.begin(), end, signaler_);
 
     if (it != end)
-        _signalers.erase (it);
+        _signalers.erase(it);
 }
 
-void zmq::mailbox_safe_t::clear_signalers ()
+void zmq::mailbox_safe_t::clear_signalers()
 {
-    _signalers.clear ();
+    _signalers.clear();
 }
 
-void zmq::mailbox_safe_t::send (const command_t &cmd_)
+void zmq::mailbox_safe_t::send(const command_t &cmd_)
 {
-    _sync->lock ();
-    _cpipe.write (cmd_, false);
-    const bool ok = _cpipe.flush ();
+    _sync->lock();
+    _cpipe.write(cmd_, false);
+    const bool ok = _cpipe.flush();
 
-    if (!ok) {
-        _cond_var.broadcast ();
+    if (!ok)
+    {
+        _cond_var.broadcast();
 
-        for (std::vector<signaler_t *>::iterator it = _signalers.begin (),
-                                                 end = _signalers.end ();
-             it != end; ++it) {
-            (*it)->send ();
+        // 发送信号，通知 IO 线程的 mailbox
+        // IO 线程的 mailbox 的句柄已经在创建 IO 线程的时候被 poller 监听了，所以这里通知之后，poller 就可以监听到事件，从而触发 in_event()
+        for (std::vector<signaler_t *>::iterator it = _signalers.begin(), end = _signalers.end(); it != end; ++it)
+        {
+            (*it)->send();
         }
     }
 
-    _sync->unlock ();
+    _sync->unlock();
 }
 
-int zmq::mailbox_safe_t::recv (command_t *cmd_, int timeout_)
+int zmq::mailbox_safe_t::recv(command_t *cmd_, int timeout_)
 {
     //  Try to get the command straight away.
-    if (_cpipe.read (cmd_))
+    if (_cpipe.read(cmd_))
         return 0;
 
     //  If the timeout is zero, it will be quicker to release the lock, giving other a chance to send a command
     //  and immediately relock it.
-    if (timeout_ == 0) {
-        _sync->unlock ();
-        _sync->lock ();
-    } else {
+    if (timeout_ == 0)
+    {
+        _sync->unlock();
+        _sync->lock();
+    }
+    else
+    {
         //  Wait for signal from the command sender.
-        const int rc = _cond_var.wait (_sync, timeout_);
-        if (rc == -1) {
-            errno_assert (errno == EAGAIN || errno == EINTR);
+        const int rc = _cond_var.wait(_sync, timeout_);
+        if (rc == -1)
+        {
+            errno_assert(errno == EAGAIN || errno == EINTR);
             return -1;
         }
     }
 
     //  Another thread may already fetch the command
-    const bool ok = _cpipe.read (cmd_);
+    const bool ok = _cpipe.read(cmd_);
 
-    if (!ok) {
+    if (!ok)
+    {
         errno = EAGAIN;
         return -1;
     }

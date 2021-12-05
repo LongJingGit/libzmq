@@ -64,7 +64,7 @@ class mailbox_t ZMQ_FINAL : public i_mailbox
   private:
     //  The pipe to store actual commands.
     typedef ypipe_t<command_t, command_pipe_granularity> cpipe_t;
-    cpipe_t _cpipe;
+    cpipe_t _cpipe;     // socket 之间传递命令的无锁队列
 
     //  Signaler to pass signals from writer thread to reader thread.
     signaler_t _signaler;

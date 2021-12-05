@@ -30,13 +30,14 @@
 #ifndef __ZMQ_LIKELY_HPP_INCLUDED__
 #define __ZMQ_LIKELY_HPP_INCLUDED__
 
-#if defined __GNUC__
-#define likely(x) __builtin_expect ((x), 1)
-#define unlikely(x) __builtin_expect ((x), 0)
-#else
-#define likely(x) (x)
-#define unlikely(x) (x)
-#endif
+// __builtin_expect     gcc 提供的分支转移指令。标准写法为：__builtin_expect(EXP, N)，表示 exp == N 的可能性很大
 
+#if defined __GNUC__
+#    define likely(x) __builtin_expect((x), 1)
+#    define unlikely(x) __builtin_expect((x), 0)
+#else
+#    define likely(x) (x)
+#    define unlikely(x) (x)
+#endif
 
 #endif

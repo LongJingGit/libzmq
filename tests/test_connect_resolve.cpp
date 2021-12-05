@@ -50,6 +50,7 @@ void tearDown ()
 
 void test_hostname_ipv4 ()
 {
+    // zmq_connect 主线程返回 0，IO 线程会一直阻塞在 epoll_wait
     TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (sock, "tcp://localhost:1234"));
 }
 
@@ -60,6 +61,7 @@ void test_loopback_ipv6 ()
 
 void test_invalid_service_fails ()
 {
+    // port 校验未通过，socket_base::connect_internal 会校验
     int rc = zmq_connect (sock, "tcp://localhost:invalid");
     TEST_ASSERT_EQUAL_INT (-1, rc);
 }

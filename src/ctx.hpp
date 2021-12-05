@@ -44,8 +44,7 @@
 #include "atomic_counter.hpp"
 #include "thread.hpp"
 
-namespace zmq
-{
+namespace zmq {
 class object_t;
 class io_thread_t;
 class socket_base_t;
@@ -63,23 +62,20 @@ struct endpoint_t
 
 class thread_ctx_t
 {
-  public:
-    thread_ctx_t ();
+public:
+    thread_ctx_t();
 
     //  Start a new thread with proper scheduling parameters.
-    void start_thread (thread_t &thread_,
-                       thread_fn *tfn_,
-                       void *arg_,
-                       const char *name_ = NULL) const;
+    void start_thread(thread_t &thread_, thread_fn *tfn_, void *arg_, const char *name_ = NULL) const;
 
-    int set (int option_, const void *optval_, size_t optvallen_);
-    int get (int option_, void *optval_, const size_t *optvallen_);
+    int set(int option_, const void *optval_, size_t optvallen_);
+    int get(int option_, void *optval_, const size_t *optvallen_);
 
-  protected:
+protected:
     //  Synchronisation of access to context options.
     mutex_t _opt_sync;
 
-  private:
+private:
     //  Thread parameters.
     int _thread_priority;
     int _thread_sched_policy;
@@ -92,18 +88,18 @@ class thread_ctx_t
 
 class ctx_t ZMQ_FINAL : public thread_ctx_t
 {
-  public:
+public:
     //  Create the context object.
-    ctx_t ();
+    ctx_t();
 
     //  Returns false if object is not a context.
-    bool check_tag () const;
+    bool check_tag() const;
 
     //  This function is called when user invokes zmq_ctx_term. If there are
     //  no more sockets open it'll cause all the infrastructure to be shut
     //  down. If there are open sockets still, the deallocation happens
     //  after the last one is closed.
-    int terminate ();
+    int terminate();
 
     // This function starts the terminate process by unblocking any blocking
     // operations currently in progress and stopping any more socket activity
@@ -112,42 +108,39 @@ class ctx_t ZMQ_FINAL : public thread_ctx_t
     // terminate must still be called afterwards.
     // This function is optional, terminate will unblock any current
     // operations as well.
-    int shutdown ();
+    int shutdown();
 
     //  Set and get context properties.
-    int set (int option_, const void *optval_, size_t optvallen_);
-    int get (int option_, void *optval_, const size_t *optvallen_);
-    int get (int option_);
+    int set(int option_, const void *optval_, size_t optvallen_);
+    int get(int option_, void *optval_, const size_t *optvallen_);
+    int get(int option_);
 
     //  Create and destroy a socket.
-    zmq::socket_base_t *create_socket (int type_);
-    void destroy_socket (zmq::socket_base_t *socket_);
+    zmq::socket_base_t *create_socket(int type_);
+    void destroy_socket(zmq::socket_base_t *socket_);
 
     //  Send command to the destination thread.
-    void send_command (uint32_t tid_, const command_t &command_);
+    void send_command(uint32_t tid_, const command_t &command_);
 
     //  Returns the I/O thread that is the least busy at the moment.
     //  Affinity specifies which I/O threads are eligible (0 = all).
     //  Returns NULL if no I/O thread is available.
-    zmq::io_thread_t *choose_io_thread (uint64_t affinity_);
+    zmq::io_thread_t *choose_io_thread(uint64_t affinity_);
 
     //  Returns reaper thread object.
-    zmq::object_t *get_reaper () const;
+    zmq::object_t *get_reaper() const;
 
     //  Management of inproc endpoints.
-    int register_endpoint (const char *addr_, const endpoint_t &endpoint_);
-    int unregister_endpoint (const std::string &addr_,
-                             const socket_base_t *socket_);
-    void unregister_endpoints (const zmq::socket_base_t *socket_);
-    endpoint_t find_endpoint (const char *addr_);
-    void pend_connection (const std::string &addr_,
-                          const endpoint_t &endpoint_,
-                          pipe_t **pipes_);
-    void connect_pending (const char *addr_, zmq::socket_base_t *bind_socket_);
+    int register_endpoint(const char *addr_, const endpoint_t &endpoint_);
+    int unregister_endpoint(const std::string &addr_, const socket_base_t *socket_);
+    void unregister_endpoints(const zmq::socket_base_t *socket_);
+    endpoint_t find_endpoint(const char *addr_);
+    void pend_connection(const std::string &addr_, const endpoint_t &endpoint_, pipe_t **pipes_);
+    void connect_pending(const char *addr_, zmq::socket_base_t *bind_socket_);
 
 #ifdef ZMQ_HAVE_VMCI
     // Return family for the VMCI socket or -1 if it's not available.
-    int get_vmci_socket_family ();
+    int get_vmci_socket_family();
 #endif
 
     enum
@@ -156,12 +149,12 @@ class ctx_t ZMQ_FINAL : public thread_ctx_t
         reaper_tid = 1
     };
 
-    ~ctx_t ();
+    ~ctx_t();
 
-    bool valid () const;
+    bool valid() const;
 
-  private:
-    bool start ();
+private:
+    bool start();
 
     struct pending_connection_t
     {
@@ -204,7 +197,7 @@ class ctx_t ZMQ_FINAL : public thread_ctx_t
     io_threads_t _io_threads;
 
     //  Array of pointers to mailboxes for both application and I/O threads.
-    std::vector<i_mailbox *> _slots;
+    std::vector<i_mailbox *> _slots; // 保存着 IO 线程/回收线程/socket 线程 的 mailbox。用于发送命令
 
     //  Mailbox for zmq_ctx_term thread.
     mailbox_t _term_mailbox;
@@ -214,8 +207,7 @@ class ctx_t ZMQ_FINAL : public thread_ctx_t
     endpoints_t _endpoints;
 
     // List of inproc connection endpoints pending a bind
-    typedef std::multimap<std::string, pending_connection_t>
-      pending_connections_t;
+    typedef std::multimap<std::string, pending_connection_t> pending_connections_t;
     pending_connections_t _pending_connections;
 
     //  Synchronisation of access to the list of inproc endpoints.
@@ -242,7 +234,7 @@ class ctx_t ZMQ_FINAL : public thread_ctx_t
     // Should we use zero copy message decoding in this context?
     bool _zero_copy;
 
-    ZMQ_NON_COPYABLE_NOR_MOVABLE (ctx_t)
+    ZMQ_NON_COPYABLE_NOR_MOVABLE(ctx_t)
 
 #ifdef HAVE_FORK
     // the process that created this context. Used to detect forking.
@@ -254,11 +246,8 @@ class ctx_t ZMQ_FINAL : public thread_ctx_t
         bind_side
     };
 
-    static void
-    connect_inproc_sockets (zmq::socket_base_t *bind_socket_,
-                            const options_t &bind_options_,
-                            const pending_connection_t &pending_connection_,
-                            side side_);
+    static void connect_inproc_sockets(
+        zmq::socket_base_t *bind_socket_, const options_t &bind_options_, const pending_connection_t &pending_connection_, side side_);
 
 #ifdef ZMQ_HAVE_VMCI
     int _vmci_fd;
@@ -266,6 +255,6 @@ class ctx_t ZMQ_FINAL : public thread_ctx_t
     mutex_t _vmci_sync;
 #endif
 };
-}
+} // namespace zmq
 
 #endif

@@ -168,8 +168,7 @@ void zmq::stream_connecter_base_t::in_event ()
     out_event ();
 }
 
-void zmq::stream_connecter_base_t::create_engine (
-  fd_t fd_, const std::string &local_address_)
+void zmq::stream_connecter_base_t::create_engine (fd_t fd_, const std::string &local_address_)
 {
     const endpoint_uri_pair_t endpoint_pair (local_address_, _endpoint,
                                              endpoint_type_connect);
@@ -183,6 +182,7 @@ void zmq::stream_connecter_base_t::create_engine (
     alloc_assert (engine);
 
     //  Attach the engine to the corresponding session object.
+    // 把 engine 绑定到 session 上
     send_attach (_session, engine);
 
     //  Shut the connecter down.

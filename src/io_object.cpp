@@ -48,7 +48,7 @@ void zmq::io_object_t::plug (io_thread_t *io_thread_)
     zmq_assert (!_poller);
 
     //  Retrieve the poller from the thread we are running in.
-    _poller = io_thread_->get_poller ();
+    _poller = io_thread_->get_poller ();        // 获取 poller 的指针，然后可以通过该指针向 poller 注册要监听的事件
 }
 
 void zmq::io_object_t::unplug ()

@@ -59,9 +59,11 @@ zmq::fd_t zmq::mailbox_t::get_fd () const
 void zmq::mailbox_t::send (const command_t &cmd_)
 {
     _sync.lock ();
+    // 将命令写入到无锁队列中
     _cpipe.write (cmd_, false);
     const bool ok = _cpipe.flush ();
     _sync.unlock ();
+    // 激活被监听的 IO 线程的 mailbox 的句柄
     if (!ok)
         _signaler.send ();
 }

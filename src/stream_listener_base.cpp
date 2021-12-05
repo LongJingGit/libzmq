@@ -35,93 +35,100 @@
 #include "raw_engine.hpp"
 
 #ifndef ZMQ_HAVE_WINDOWS
-#include <unistd.h>
+#    include <unistd.h>
 #else
-#include <winsock2.h>
+#    include <winsock2.h>
 #endif
 
-zmq::stream_listener_base_t::stream_listener_base_t (
-  zmq::io_thread_t *io_thread_,
-  zmq::socket_base_t *socket_,
-  const zmq::options_t &options_) :
-    own_t (io_thread_, options_),
-    io_object_t (io_thread_),
-    _s (retired_fd),
-    _handle (static_cast<handle_t> (NULL)),
-    _socket (socket_)
+zmq::stream_listener_base_t::stream_listener_base_t(zmq::io_thread_t *io_thread_, zmq::socket_base_t *socket_, const zmq::options_t &options_)
+    : own_t(io_thread_, options_)
+    , io_object_t(io_thread_)
+    , _s(retired_fd)
+    , _handle(static_cast<handle_t>(NULL))
+    , _socket(socket_)
+{}
+
+zmq::stream_listener_base_t::~stream_listener_base_t()
 {
+    zmq_assert(_s == retired_fd);
+    zmq_assert(!_handle);
 }
 
-zmq::stream_listener_base_t::~stream_listener_base_t ()
+int zmq::stream_listener_base_t::get_local_address(std::string &addr_) const
 {
-    zmq_assert (_s == retired_fd);
-    zmq_assert (!_handle);
+    addr_ = get_socket_name(_s, socket_end_local);
+    return addr_.empty() ? -1 : 0;
 }
 
-int zmq::stream_listener_base_t::get_local_address (std::string &addr_) const
-{
-    addr_ = get_socket_name (_s, socket_end_local);
-    return addr_.empty () ? -1 : 0;
-}
-
-void zmq::stream_listener_base_t::process_plug ()
+void zmq::stream_listener_base_t::process_plug()
 {
     //  Start polling for incoming connections.
-    _handle = add_fd (_s);
-    set_pollin (_handle);
+    _handle = add_fd(_s);
+    set_pollin(_handle);
 }
 
-void zmq::stream_listener_base_t::process_term (int linger_)
+void zmq::stream_listener_base_t::process_term(int linger_)
 {
-    rm_fd (_handle);
-    _handle = static_cast<handle_t> (NULL);
-    close ();
-    own_t::process_term (linger_);
+    rm_fd(_handle);
+    _handle = static_cast<handle_t>(NULL);
+    close();
+    own_t::process_term(linger_);
 }
 
-int zmq::stream_listener_base_t::close ()
+int zmq::stream_listener_base_t::close()
 {
     // TODO this is identical to stream_connector_base_t::close
 
-    zmq_assert (_s != retired_fd);
+    zmq_assert(_s != retired_fd);
 #ifdef ZMQ_HAVE_WINDOWS
-    const int rc = closesocket (_s);
-    wsa_assert (rc != SOCKET_ERROR);
+    const int rc = closesocket(_s);
+    wsa_assert(rc != SOCKET_ERROR);
 #else
-    const int rc = ::close (_s);
-    errno_assert (rc == 0);
+    const int rc = ::close(_s);
+    errno_assert(rc == 0);
 #endif
-    _socket->event_closed (make_unconnected_bind_endpoint_pair (_endpoint), _s);
+    _socket->event_closed(make_unconnected_bind_endpoint_pair(_endpoint), _s);
     _s = retired_fd;
 
     return 0;
 }
 
-void zmq::stream_listener_base_t::create_engine (fd_t fd_)
+void zmq::stream_listener_base_t::create_engine(fd_t fd_)
 {
-    const endpoint_uri_pair_t endpoint_pair (
-      get_socket_name (fd_, socket_end_local),
-      get_socket_name (fd_, socket_end_remote), endpoint_type_bind);
+    const endpoint_uri_pair_t endpoint_pair(get_socket_name(fd_, socket_end_local), get_socket_name(fd_, socket_end_remote), endpoint_type_bind);
 
+    /**
+     * @brief 注意：这里创建 engine 的时候会根据是否是原生 socket 创建不同的 engine 类型。options.raw_socket 默认为 false。
+     * 两种 socket 的区别在于，非原生 socket 创建的是 zmtp_engine 类型的 engine，会在内核级 socket 的三次握手之上添加一层 handshake().
+     *
+     * 具体的数据读写流程可以参考 zmq::stream_engine_base_t::in_event_internal() 中的代码实现
+     */
     i_engine *engine;
     if (options.raw_socket)
-        engine = new (std::nothrow) raw_engine_t (fd_, options, endpoint_pair);
+        engine = new (std::nothrow) raw_engine_t(fd_, options, endpoint_pair);
     else
-        engine = new (std::nothrow) zmtp_engine_t (fd_, options, endpoint_pair);
-    alloc_assert (engine);
+        engine = new (std::nothrow) zmtp_engine_t(fd_, options, endpoint_pair);
+    alloc_assert(engine);
 
     //  Choose I/O thread to run connecter in. Given that we are already
     //  running in an I/O thread, there must be at least one available.
-    io_thread_t *io_thread = choose_io_thread (options.affinity);
-    zmq_assert (io_thread);
+    io_thread_t *io_thread = choose_io_thread(options.affinity);
+    zmq_assert(io_thread);
 
     //  Create and launch a session object.
-    session_base_t *session =
-      session_base_t::create (io_thread, false, _socket, options, NULL);
-    errno_assert (session);
-    session->inc_seqnum ();
-    launch_child (session);
-    send_attach (session, engine, false);
+    // _active 被置为 false
+    session_base_t *session = session_base_t::create(io_thread, false, _socket, options, NULL);
+    errno_assert(session);
+    session->inc_seqnum();
+    /**
+     * Construct a new launch child object launch_child
+     *
+     * 实际上是为了让 session 创建 tcp_connecter，但是对于 tcp 通信来说，
+     * server 创建 session 的时候将 _active 初始化成了 false，所以将 session 发给 IO 线程实际上没有任何作用？
+     */
+    launch_child(session);
 
-    _socket->event_accepted (endpoint_pair, fd_);
+    send_attach(session, engine, false);
+
+    _socket->event_accepted(endpoint_pair, fd_);
 }

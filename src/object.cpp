@@ -45,7 +45,7 @@ zmq::object_t::object_t (ctx_t *ctx_, uint32_t tid_) : _ctx (ctx_), _tid (tid_)
 
 zmq::object_t::object_t (object_t *parent_) :
     _ctx (parent_->_ctx),
-    _tid (parent_->_tid)
+    _tid (parent_->_tid)            // 注意这里 _tid 的赋值。涉及到后面是将命令发送给 IO 线程、socket 线程还是回收线程
 {
 }
 

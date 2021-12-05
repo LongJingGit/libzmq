@@ -74,7 +74,7 @@ class io_object_t : public i_poll_events
     void timer_event (int id_) ZMQ_OVERRIDE;
 
   private:
-    poller_t *_poller;
+    poller_t *_poller;      // 在实例化 io_object_t 的时候，就会调用 ::plug 接口获取 _poller 指针
 
     ZMQ_NON_COPYABLE_NOR_MOVABLE (io_object_t)
 };

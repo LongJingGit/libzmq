@@ -65,6 +65,7 @@ void test_roundtrip ()
 
 void test_sndmore_fails ()
 {
+    // zmq::channel_t::xsend: CHANNEL sockets do not allow multipart data (ZMQ_SNDMORE)
     int rc = zmq_send (sc, "X", 1, ZMQ_SNDMORE);
     TEST_ASSERT_EQUAL_INT (-1, rc);
     TEST_ASSERT_EQUAL_INT (EINVAL, errno);

@@ -96,7 +96,7 @@ class epoll_t ZMQ_FINAL : public worker_poller_base_t
     {
         fd_t fd;
         epoll_event ev;
-        zmq::i_poll_events *events;
+        zmq::i_poll_events *events;             // 继承于 i_poll_events 的派生类的对象指针
     };
 
     //  List of retired event sources.

@@ -38,51 +38,47 @@
 #include "io_object.hpp"
 #include "address.hpp"
 
-namespace zmq
-{
+namespace zmq {
 class io_thread_t;
 class socket_base_t;
 
 class stream_listener_base_t : public own_t, public io_object_t
 {
-  public:
-    stream_listener_base_t (zmq::io_thread_t *io_thread_,
-                            zmq::socket_base_t *socket_,
-                            const options_t &options_);
-    ~stream_listener_base_t () ZMQ_OVERRIDE;
+public:
+    stream_listener_base_t(zmq::io_thread_t *io_thread_, zmq::socket_base_t *socket_, const options_t &options_);
+    ~stream_listener_base_t() ZMQ_OVERRIDE;
 
     // Get the bound address for use with wildcards
-    int get_local_address (std::string &addr_) const;
+    int get_local_address(std::string &addr_) const;
 
-  protected:
-    virtual std::string get_socket_name (fd_t fd_,
-                                         socket_end_t socket_end_) const = 0;
+protected:
+    virtual std::string get_socket_name(fd_t fd_, socket_end_t socket_end_) const = 0;
 
-  private:
+private:
     //  Handlers for incoming commands.
-    void process_plug () ZMQ_FINAL;
-    void process_term (int linger_) ZMQ_FINAL;
+    void process_plug() ZMQ_FINAL;
+    void process_term(int linger_) ZMQ_FINAL;
 
-  protected:
+protected:
     //  Close the listening socket.
-    virtual int close ();
+    virtual int close();
 
-    virtual void create_engine (fd_t fd);
+    virtual void create_engine(fd_t fd);
 
     //  Underlying socket.
-    fd_t _s;
+    fd_t _s; // 系统级 socket（监听 socket，由主线程调用 zmq_bind 时创建）
 
     //  Handle corresponding to the listening socket.
     handle_t _handle;
 
     //  Socket the listener belongs to.
-    zmq::socket_base_t *_socket;
+    zmq::socket_base_t *_socket;                // 创建 listener 的时候调用 bind 时初始化的
 
     // String representation of endpoint to bind to
     std::string _endpoint;
 
-    ZMQ_NON_COPYABLE_NOR_MOVABLE (stream_listener_base_t)
+    ZMQ_NON_COPYABLE_NOR_MOVABLE(stream_listener_base_t)
 };
-}
+} // namespace zmq
 
 #endif

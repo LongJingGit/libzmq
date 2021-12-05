@@ -34,52 +34,48 @@
 #include "own.hpp"
 #include "io_object.hpp"
 
-namespace zmq
-{
+namespace zmq {
 class io_thread_t;
 class session_base_t;
 struct address_t;
 
 class stream_connecter_base_t : public own_t, public io_object_t
 {
-  public:
+public:
     //  If 'delayed_start' is true connecter first waits for a while,
     //  then starts connection process.
-    stream_connecter_base_t (zmq::io_thread_t *io_thread_,
-                             zmq::session_base_t *session_,
-                             const options_t &options_,
-                             address_t *addr_,
-                             bool delayed_start_);
+    stream_connecter_base_t(
+        zmq::io_thread_t *io_thread_, zmq::session_base_t *session_, const options_t &options_, address_t *addr_, bool delayed_start_);
 
-    ~stream_connecter_base_t () ZMQ_OVERRIDE;
+    ~stream_connecter_base_t() ZMQ_OVERRIDE;
 
-  protected:
+protected:
     //  Handlers for incoming commands.
-    void process_plug () ZMQ_FINAL;
-    void process_term (int linger_) ZMQ_OVERRIDE;
+    void process_plug() ZMQ_FINAL;
+    void process_term(int linger_) ZMQ_OVERRIDE;
 
     //  Handlers for I/O events.
-    void in_event () ZMQ_OVERRIDE;
-    void timer_event (int id_) ZMQ_OVERRIDE;
+    void in_event() ZMQ_OVERRIDE;
+    void timer_event(int id_) ZMQ_OVERRIDE;
 
     //  Internal function to create the engine after connection was established.
-    virtual void create_engine (fd_t fd, const std::string &local_address_);
+    virtual void create_engine(fd_t fd, const std::string &local_address_);
 
     //  Internal function to add a reconnect timer
-    void add_reconnect_timer ();
+    void add_reconnect_timer();
 
     //  Removes the handle from the poller.
-    void rm_handle ();
+    void rm_handle();
 
     //  Close the connecting socket.
-    void close ();
+    void close();
 
     //  Address to connect to. Owned by session_base_t.
     //  It is non-const since some parts may change during opening.
     address_t *const _addr;
 
     //  Underlying socket.
-    fd_t _s;
+    fd_t _s; // 系统级 socket， 主线程调用 zmq_connect，由 IO 线程在 tcp_connecter_t::open 中创建。连接 socket
 
     //  Handle corresponding to the listening socket, if file descriptor is
     //  registered with the poller, or NULL.
@@ -91,7 +87,7 @@ class stream_connecter_base_t : public own_t, public io_object_t
     // Socket
     zmq::socket_base_t *const _socket;
 
-  private:
+private:
     //  ID of the timer used to delay the reconnection.
     enum
     {
@@ -101,9 +97,9 @@ class stream_connecter_base_t : public own_t, public io_object_t
     //  Internal function to return a reconnect backoff delay.
     //  Will modify the current_reconnect_ivl used for next call
     //  Returns the currently used interval
-    int get_new_reconnect_ivl ();
+    int get_new_reconnect_ivl();
 
-    virtual void start_connecting () = 0;
+    virtual void start_connecting() = 0;
 
     //  If true, connecter is waiting a while before trying to connect.
     const bool _delayed_start;
@@ -114,12 +110,12 @@ class stream_connecter_base_t : public own_t, public io_object_t
     //  Current reconnect ivl, updated for backoff strategy
     int _current_reconnect_ivl;
 
-    ZMQ_NON_COPYABLE_NOR_MOVABLE (stream_connecter_base_t)
+    ZMQ_NON_COPYABLE_NOR_MOVABLE(stream_connecter_base_t)
 
-  protected:
+protected:
     //  Reference to the session we belong to.
     zmq::session_base_t *const _session;
 };
-}
+} // namespace zmq
 
 #endif
