@@ -123,8 +123,10 @@ void zmq::stream_listener_base_t::create_engine(fd_t fd_)
     /**
      * Construct a new launch child object launch_child
      *
-     * 实际上是为了让 session 创建 tcp_connecter，但是对于 tcp 通信来说，
      * server 创建 session 的时候将 _active 初始化成了 false，所以将 session 发给 IO 线程实际上没有任何作用？
+     *
+     * FIXME: 这里 launch_child 的实际作用是什么？
+     *      是为了绑定 object_->set_owner (this) 吗？
      */
     launch_child(session);
 

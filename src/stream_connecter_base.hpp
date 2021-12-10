@@ -75,7 +75,7 @@ protected:
     address_t *const _addr;
 
     //  Underlying socket.
-    fd_t _s; // 系统级 socket， 主线程调用 zmq_connect，由 IO 线程在 tcp_connecter_t::open 中创建。连接 socket
+    fd_t _s; // 系统级 socket， 主线程调用 zmq_connect，由 IO 线程在 tcp_connecter_t::open 中创建。连接 socket。如果连接成功之后，该 conn_fd 会被置为 retired_fd
 
     //  Handle corresponding to the listening socket, if file descriptor is
     //  registered with the poller, or NULL.

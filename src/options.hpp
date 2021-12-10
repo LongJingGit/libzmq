@@ -74,7 +74,7 @@ struct options_t
     int rcvhwm;
 
     //  I/O thread affinity.
-    uint64_t affinity;
+    uint64_t affinity;          // FIXME: 这个成员变量的含义？
 
     //  Socket routing id.
     unsigned char routing_id_size;

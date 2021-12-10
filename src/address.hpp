@@ -61,12 +61,12 @@ class vmci_address_t;
 
 namespace protocol_name
 {
-static const char inproc[] = "inproc";
+static const char inproc[] = "inproc";          // 进程内
 static const char tcp[] = "tcp";
 static const char udp[] = "udp";
 #ifdef ZMQ_HAVE_OPENPGM
-static const char pgm[] = "pgm";
-static const char epgm[] = "epgm";
+static const char pgm[] = "pgm";                // 广播
+static const char epgm[] = "epgm";              // 广播
 #endif
 #ifdef ZMQ_HAVE_NORM
 static const char norm[] = "norm";
@@ -78,7 +78,7 @@ static const char ws[] = "ws";
 static const char wss[] = "wss";
 #endif
 #if defined ZMQ_HAVE_IPC
-static const char ipc[] = "ipc";
+static const char ipc[] = "ipc";                // 进程间
 #endif
 #if defined ZMQ_HAVE_TIPC
 static const char tipc[] = "tipc";

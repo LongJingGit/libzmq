@@ -86,6 +86,7 @@ void zmq::tcp_connecter_t::process_term(int linger_)
     stream_connecter_base_t::process_term(linger_);
 }
 
+// EPOLLOUT 事件触发：并不一定是 socket 可写数据，也有可能是 socket 发生了错误（比如连接拒绝或者无可用内存，这也会被内核标记为可写）
 void zmq::tcp_connecter_t::out_event()
 {
     if (_connect_timer_started)
@@ -97,8 +98,15 @@ void zmq::tcp_connecter_t::out_event()
     //  TODO this is still very similar to (t)ipc_connecter_t, maybe the
     //  differences can be factored out
 
+    // 从内核监听队列中删除 conn_fd，后面 engine 中会重新将 conn_fd 加入内核监听队列，并设置 handle.
+    // 这么做的目的是在 connect() 中会判断是否是 socket 发生了错误才触发的 out_event()。如果 socket 发生了错误，则不需要再次从内核监听队列删除 fd；如果没有发生错误，会在 engine 中重新将该 fd 加入到内核监听队列。这样就可以和 server 端重用 engine 的代码。
     rm_handle();
 
+    /**
+     * 如果 socket 没有发生错误，返回值为 conn_fd，并将原来的 conn_fd 设置为 retired_fd。如果没有发生错误，表示已经正常连接了，但是由于 rm_handle 中已经从内核监听队列中删除了该 fd，所以如果对端发送了数据，则不会触发 EPOLLIN 事件，只有在 engine 中将 conn_fd 重新加入内核监听队列，才会由 epoll 重新监听
+     *
+     * 如果 socket 发生错误，则会返回 retired_fd
+     */
     const fd_t fd = connect();
 
     if (fd == retired_fd && ((options.reconnect_stop & ZMQ_RECONNECT_STOP_CONN_REFUSED) && errno == ECONNREFUSED))
@@ -141,6 +149,7 @@ void zmq::tcp_connecter_t::start_connecting()
     //  Connect may succeed in synchronous manner.
     if (rc == 0)
     {
+        // 这里需要补充的是：如果马上建立了 tcp 连接，则 server 端的 conn_fd 的 EPOLLOUT 立刻会被触发，server 会发送 greeting 消息给 client 端
         _handle = add_fd(_s);       // 将 conn_fd 注册到内核监听队列中
         out_event();
     }
@@ -148,7 +157,7 @@ void zmq::tcp_connecter_t::start_connecting()
     //  Connection establishment may be delayed. Poll for its completion.
     else if (rc == -1 && errno == EINPROGRESS)
     {
-        _handle = add_fd(_s);
+        _handle = add_fd(_s);   // 如果返回的错误码是 EINPROGRESS，则表示正在连接中，需要将 conn_fd 加入到内核监听队列，监听 EPOLLOUT 事件
         set_pollout(_handle);
         _socket->event_connect_delayed(make_unconnected_connect_endpoint_pair(_endpoint), zmq_errno());
 
@@ -266,7 +275,8 @@ zmq::fd_t zmq::tcp_connecter_t::connect()
 #else
     socklen_t len = sizeof err;
 #endif
-
+    // 当 conn_fd 发生错误（比如连接被拒绝,或者内存已满等），也会触发 EPOLLOUT 事件。所以需要在这里判断是否发生了错误
+    // err 为 0 时表示没有错误发生
     const int rc = getsockopt(_s, SOL_SOCKET, SO_ERROR, reinterpret_cast<char *>(&err), &len);
 
     //  Assert if the error was caused by 0MQ bug.
@@ -302,7 +312,7 @@ zmq::fd_t zmq::tcp_connecter_t::connect()
     //  Return the newly connected socket.
     const fd_t result = _s;
     _s = retired_fd;
-    return result;
+    return result;          // 注意：返回的是之前的 conn_fd，该 fd 会被用来初始化 engine 和 session
 }
 
 bool zmq::tcp_connecter_t::tune_socket(const fd_t fd_)

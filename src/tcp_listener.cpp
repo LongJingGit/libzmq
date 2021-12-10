@@ -95,8 +95,6 @@ std::string zmq::tcp_listener_t::get_socket_name(zmq::fd_t fd_, socket_end_t soc
 
 int zmq::tcp_listener_t::create_socket(const char *addr_)
 {
-    // 创建的是阻塞 socket
-    // 这里创建的 socket 对应的是 stream_listener_base 中的 socket
     _s = tcp_open_socket(addr_, options, true, true, &_address);
     if (_s == retired_fd)
     {
@@ -142,7 +140,7 @@ int zmq::tcp_listener_t::create_socket(const char *addr_)
         goto error;
 #endif
 
-    //  Listen for incoming connections.（阻塞 socket）
+    //  Listen for incoming connections.
     rc = listen(_s, options.backlog);
 #ifdef ZMQ_HAVE_WINDOWS
     if (rc == SOCKET_ERROR)
@@ -183,7 +181,7 @@ int zmq::tcp_listener_t::set_local_address(const char *addr_)
     _endpoint = get_socket_name(_s, socket_end_local);
 
     /**
-     * @brief 注册文件描述符 _s 到 poller 的内核监听队列？（需要调用 zmq::socket_base_t::monitor 将要监听的事件写入到 event_ 中）
+     * 注册文件描述符 _s 到 poller 的内核监听队列？（需要调用 zmq::socket_base_t::monitor 将要监听的事件写入到 event_ 中）
      *
      * 这里是主线程，不会将 fd 写入到内核监听队列；而是通过发命令的方式，通知 IO 线程，由 IO 线程将 fd 写入到内核监听队列
      */

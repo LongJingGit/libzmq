@@ -188,13 +188,13 @@ void zmq::stream_engine_base_t::plug(io_thread_t *io_thread_, session_base_t *se
     //  Connect to session object.
     zmq_assert(!_session);
     zmq_assert(session_);
-    _session = session_;            // session 绑定到 engine
+    _session = session_; // session 绑定到 engine
     _socket = _session->get_socket();
 
     //  Connect to I/O threads poller object.
     io_object_t::plug(io_thread_);
-    // server 端：将连接 socket 加入到 poller 的内核监听队列中
-    // client 端：对于 connnect 来说，这里不就是将 连接 socket 第二次加入到了内核监听队列中了吗？内核是否允许将同一个文件描述符多次加入到内核监听队列？？？
+
+    // 将连接 socket 加入到 poller 的内核监听队列中
     _handle = add_fd(_s);
     _io_error = false;
 
@@ -247,9 +247,9 @@ void zmq::stream_engine_base_t::terminate()
 }
 
 /***
- * Attention: in_event() 接口由两个地方可以触发：
- * 1. 直接由 epoll 调用。这是由于被监听的 conn_fd 被触发
- * 2. 由 zmtp_engine_t::plug_internal 或者 raw_engine_t::plug_internal 调用。这是由于 IO 线程中的 mailbox_fd 被触发，需要将 engine plug 到 session 中
+ * 有数据可读有两种情况：
+ * 1. 监听 conn_fd 被触发，从 epoll 返回，调用到 in_event()
+ * 2. 在 zmtp_engine_t::plug_internal() 中直接调用。调用到 plug_internal() 表明已经完成了连接。所以在这里直接调用 in_event() 尝试从 socket 中读取数据，并不一定要等到 epoll 返回才可以
  */
 void zmq::stream_engine_base_t::in_event()
 {
@@ -259,27 +259,19 @@ void zmq::stream_engine_base_t::in_event()
 }
 
 /**
- * 需要注意的是，如果是 epoll 监听的 conn_fd 被触发，说明连接 socket 有数据可读。
- * 1. 如果创建的是 zmtp_engine_t，zeromq 在网络层协议栈上又加了一层协议，client 与 server 双方建立了网络层的连接之后，对端会发送 greeting 信息给 server，server 需要校验该 greeting 信息（handshake()），校验过之后才可以进行后续的读写操作，即切换到正常的数据流
+ * ZMTP 协议是 ZeroMQ 默认的消息传输协议，在 TCP 协议之上定义了向后兼容性的规则，可扩展的安全机制，命令和消息分帧，连接元数据，以及其他传输层功能。所有有关 handshake 的都是 ZMTP 协议的处理逻辑。
  *
- * 相当于 ZeroMQ 在网络层协议栈上又加了一层限制。这层握手协议（handshake()）主要是为了协商双方后续的通信协议的
- *
- * 如果是连接 socket 被触发，则可以完成握手，handshake() 返回 true
- * 如果是 zmtp_engine_t::plug_internal 调用到 in_event()，则 handshake() 返回 false
- *
- * 以下我们可以将 handshake() 简称为 “握手” 协议
- *
- * 2. 如果创建的是 raw_engine_t 类型的 engine，则没有 handshake() 这些逻辑
+ * 如果用户需要使用裸 TCP 协议，则可以创建 raw_engine_t
  */
 bool zmq::stream_engine_base_t::in_event_internal()
 {
     zmq_assert(!_io_error);
 
     //  If still handshaking, receive and process the greeting message.
-    if (unlikely(_handshaking))         // 在构造函数中被初始化成了 true
+    if (unlikely(_handshaking)) // 在构造函数中被初始化成了 true
     {
         /**
-         * 1. zmtp_engine: handshake() 会从 conn_fd 中读取对端发送的 greeting 消息，用于完成双方通信协议的协商。具体逻辑参考 handshake() 中的实现
+         * 1. zmtp_engine: handshake() 会从 conn_fd 中读取对端发送的 greeting 消息
          * 2. raw_engine: handshake() 直接返回 true
          */
         if (handshake())
@@ -291,7 +283,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
             if (_mechanism == NULL && _has_handshake_stage)
                 _session->engine_ready();
         }
-        // 如果非连接 sockfd 触发导致调用到该接口或者握手失败，则直接返回 false
+        // 如果对端没有发送 greeting 消息，则返回失败
         else
             return false;
     }
@@ -329,7 +321,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
                 error(connection_error);
                 return false;
             }
-            return true;            // 如果读取不到数据，则返回 true（连接 socket 无数据可读）
+            return true; // 如果读取不到数据，则返回 true（连接 socket 无数据可读）
         }
 
         //  Adjust input size
@@ -349,7 +341,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
         _insize -= processed;
         if (rc == 0 || rc == -1)
             break;
-        rc = (this->*_process_msg)(_decoder->msg());            // 处理从内核读取到的数据
+        rc = (this->*_process_msg)(_decoder->msg()); // 处理从内核读取到的数据
         if (rc == -1)
             break;
     }
@@ -371,6 +363,24 @@ bool zmq::stream_engine_base_t::in_event_internal()
     return true;
 }
 
+/**
+ * EPOLLOUT 触发时间：
+ * 1. TCP 连接建立完毕触发一次
+ * 2. 缓冲区由不可写转变为可写的时候触发一次
+ */
+
+/**
+ * 会有两个地方触发 out_event()
+ * 1. conn_fd 可写，会从 epoll 中直接执行 out_event()。如果没有数据可写，会将 _output_stopped 置为 true
+ * 2. conn_fd 可读，epoll 调用到 in_event(). process_handshake_command()--->restart_output()--->out_event()
+ * 然后判断如果 _output_stopped 为 true，则会调用到 out_event()
+ *
+ * 注意 epoll 中是先执行 out_event()，然后执行 in_event()
+ *
+ * 也就是说，当 server-client 双方建立连接之后，server 会向 socket 写入 greeting 消息。greeting 消息在 zmtp_engine_t::plug_internal() 中构造的
+ *
+ * 同样的，client 端在监听到 conn_fd 可写之后，也会向 server 端写入 greeting 消息
+ */
 void zmq::stream_engine_base_t::out_event()
 {
     zmq_assert(!_io_error);
@@ -413,7 +423,7 @@ void zmq::stream_engine_base_t::out_event()
         //  If there is no data to send, stop polling for output.
         if (_outsize == 0)
         {
-            _output_stopped = true;
+            _output_stopped = true; // 没有数据可以发送，所以也不需要监听 EPOLLOUT 事件
             reset_pollout();
             return;
         }
@@ -436,13 +446,13 @@ void zmq::stream_engine_base_t::out_event()
     }
 
     _outpos += nbytes;
-    _outsize -= nbytes;
+    _outsize -= nbytes;         // 数据发送完毕后，_outsize 会被重置为 0
 
     //  If we are still handshaking and there are no data
     //  to send, stop polling for output.
     if (unlikely(_handshaking))
         if (_outsize == 0)
-            reset_pollout();
+            reset_pollout();    // 数据发送完毕之后，不再监听 EPOLLOUT 事件
 }
 
 void zmq::stream_engine_base_t::restart_output()

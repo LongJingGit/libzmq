@@ -100,22 +100,28 @@ void zmq::zmtp_engine_t::plug_internal()
 
     //  Send the 'length' and 'flags' fields of the routing id message.
     //  The 'length' field is encoded in the long format.
+    // 构造 greeting 消息（当向内核注册 conn_fd 之后，如果 conn_fd 可写，会在 out_event() 中发送 greeting 消息）
     _outpos = _greeting_send;
-    _outpos[_outsize++] = UCHAR_MAX;
+    _outpos[_outsize++] = UCHAR_MAX;        // 0xff
     put_uint64(&_outpos[_outsize], _options.routing_id_size + 1);
     _outsize += 8;
     _outpos[_outsize++] = 0x7f;
 
-    set_pollin();
-    set_pollout();
+    set_pollin();       // 设置 conn_fd 可读事件回调函数。当 conn_fd 可读时，从 socket 读取 greeting 消息
+    set_pollout();      // 设置 conn_fd 可写事件回调函数。当 conn_fd 可写时，从 socket 写入 greeting 消息
     //  Flush all the data that may have been already received downstream.
+    /**
+     * @brief 对端可能已经写入了数据，所以在这里直接调用 in_event() 处理数据，不用等待 epoll 返回（比如处理对端发送过来的 greeting 消息）
+     *
+     * 比如 tcp 通信中，如果 server 端启动顺序先于 cliend 端；则当 client 端的 conn_fd 还未被加入到内核监听队列(未调用到 add_fd 和 set_pollout)，server 端的 conn_fd 的 EPOLLOUT 事件就已经被触发了(这是因为当 client 端 connect 成功之后，server 端就已经可写了)，server 端就会发送 greeting 消息过来。所以对于此时的 client 来说，不需要等到 epoll 返回再去读取数据，而是可以直接尝试从内核读取数据。
+     */
     in_event();
 }
 
 //  Position of the revision and minor fields in the greeting.
 const size_t revision_pos = 10;
 const size_t minor_pos = 11;
-
+#include <iostream>
 bool zmq::zmtp_engine_t::handshake()
 {
     zmq_assert(_greeting_bytes_read < _greeting_size);
@@ -125,6 +131,7 @@ bool zmq::zmtp_engine_t::handshake()
         return false;
     const bool unversioned = rc != 0;
 
+    // select_handshake_fun 中会实例化 _encoder，_decoder 以及 _mechanism，并设置函数指针 _process_msg 和 _next_msg
     if (!(this->*select_handshake_fun(unversioned, _greeting_recv[revision_pos], _greeting_recv[minor_pos]))())
         return false;
 
@@ -140,6 +147,13 @@ int zmq::zmtp_engine_t::receive_greeting()
     bool unversioned = false;
     while (_greeting_bytes_read < _greeting_size)
     {
+        /**
+         * server 端：
+         * 1. client 发送的第一条 greeting 消息长度为 10 字节，但是 server 在第一次循环中读取了 10 字节，在第二次循环中读取 2 字节失败，return -1
+         * 2. client 发送的第二条 greeting 消息长度为 64 字节，第一次循环读取 2 字节成功，第二次循环读取 64 - 2 - 10 = 52 字节成功，return unversioned ? 1 : 0;
+         *
+         * client 端逻辑类似。
+         */
         const int n = read(_greeting_recv + _greeting_bytes_read, _greeting_size - _greeting_bytes_read);
         if (n == -1)
         {
@@ -178,14 +192,28 @@ int zmq::zmtp_engine_t::receive_greeting()
     return unversioned ? 1 : 0;
 }
 
+/**
+ * 这里需要特别注意的是：ZMTP 的 greeting 消息并不是只有一条，而是类似于三次握手
+ *
+ * 1. client--->server client 发送给 server 第一条 greeting 消息：消息长度_outsize为 10 字节。消息已经在 plug_internal 中提前构造好了
+ * 2. server 收到 greeting 的消息后，会在自己构造出来的 greeting 消息尾部(即第十个字节的位置)增加一个字节(标明主版本号)，发送第一条 greeting 消息给 client，消息长度_outsize为 11 字节
+ * 3. client 收到 server 发送过来的长度为 11 字节的 greeting 消息，读取 _greeting_recv[revision_pos]，判断 server 的主版本号。然后构造第二条 greeting 消息（将次版本号写入到消息体的第十一个字节），消息体长度_outsize为 64 字节
+ * 4. server 端收到 client 端发送过来的第二条 greeting 消息，但是由于第二条 greeting 消息长度为 64 字节，而 server 端的 _greeting_size 为 12，所以 server 无法全部接收 client 发送的第二条 greeting 消息，只能读取到 12 字节。构造第二条发送给 client 端的 greeting 消息(将次版本号写入到消息体的第一个字节)，消息体长度为 64 字节，同时更新自己的 _greeting_size 为 64
+ *    4.1 server 端由于没有全部读取从 client 发送过来的第二条 greeting 消息，所以会第二次触发 EPOLLIN 事件。这次读取的消息长度为 64 字节。至此，server 端已经准备好。
+ * 5. client 收到 server 端发送过来的第二条 greeting 消息，消息体长度为 64 字节。至此 client 端已准备好。
+ *
+ * 综上，client 端发送给 server 两条 greeting 消息；server 发送给 client 两条 greeting 消息
+ *
+ * 注意：每次发送完 greeting 消息之后，都会将 EPOLLOUT 事件从内核监听队列中删除，所以需要重新发送 greeting 消息之前，需要先监听 EPOLLOUT 事件
+ */
 void zmq::zmtp_engine_t::receive_greeting_versioned()
 {
     //  Send the major version number.
     if (_outpos + _outsize == _greeting_send + signature_size)
     {
-        if (_outsize == 0)
-            set_pollout();
-        _outpos[_outsize++] = 3; //  Major version number
+        if (_outsize == 0)      // 只有当本端 greeting 数据全部发送完毕之后，_outsize 会被置为0（out_event 中发送数据）
+            set_pollout();      // 重新监听 conn_fd 的可写事件，发送下一条 greeting 消息
+        _outpos[_outsize++] = 3; //  Major version number（如果本端 greeting 消息未发送，则发送给对端的第一条 greeting 消息将是 11 字节）
     }
 
     if (_greeting_bytes_read > signature_size)
@@ -203,8 +231,12 @@ void zmq::zmtp_engine_t::receive_greeting_versioned()
                 _outpos[_outsize++] = 1; //  Minor version number
                 memset(_outpos + _outsize, 0, 20);
 
-                zmq_assert(_options.mechanism == ZMQ_NULL || _options.mechanism == ZMQ_PLAIN || _options.mechanism == ZMQ_CURVE ||
-                           _options.mechanism == ZMQ_GSSAPI);
+                // clang-format off
+                zmq_assert(_options.mechanism == ZMQ_NULL
+                        || _options.mechanism == ZMQ_PLAIN
+                        || _options.mechanism == ZMQ_CURVE
+                        || _options.mechanism == ZMQ_GSSAPI);
+                // clang-format on
 
                 if (_options.mechanism == ZMQ_NULL)
                     memcpy(_outpos + _outsize, "NULL", 4);

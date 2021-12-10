@@ -668,7 +668,7 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
         // Save last endpoint URI
         listener->get_local_address(_last_endpoint);
 
-        // 在这里会 send command，将 listener 绑定到 IO 线程。IO 线程会将 listener 含有的句柄加入到 Poller 中，以侦听读写事件。
+        // 在这里会 send command 给 IO 线程，将 listener 绑定到 IO 线程。IO 线程会将 listener 含有的句柄加入到 Poller 中，以侦听读写事件。
         // 系统级 服务端接收连接 accept 是在 zmq::tcp_listener_t::in_event 中完成的
         add_endpoint(make_unconnected_bind_endpoint_pair(_last_endpoint), static_cast<own_t *>(listener), NULL);
         options.connected = true;

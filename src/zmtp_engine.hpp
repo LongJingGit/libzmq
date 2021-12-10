@@ -104,7 +104,7 @@ class zmtp_engine_t ZMQ_FINAL : public stream_engine_base_t
     //  Need to store PING payload for PONG
     msg_t _pong_msg;
 
-    static const size_t signature_size = 10;
+    static const size_t signature_size = 10;    // 用于双方 greeting 的消息只有 9 个字节，会发送 10 字节的消息
 
     //  Size of ZMTP/1.0 and ZMTP/2.0 greeting message
     static const size_t v2_greeting_size = 12;

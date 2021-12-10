@@ -45,7 +45,7 @@ zmq::req_t::req_t (class ctx_t *parent_, uint32_t tid_, int sid_) :
     _request_id (generate_random ()),
     _strict (true)
 {
-    options.type = ZMQ_REQ;
+    options.type = ZMQ_REQ;         // override 基类 dealer_t 中将 type 赋值为 ZMQ_DEALER。
 }
 
 zmq::req_t::~req_t ()
