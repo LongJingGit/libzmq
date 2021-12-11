@@ -1124,7 +1124,7 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
         errno_assert(rc == 0);
 
         //  Attach local end of the pipe to the socket object.
-        // 将 pipe[0] 绑定到本端 socket
+        // 将 pipe[0] 绑定到本端 socket（不管 connect 是否成功，这里都可以直接使用 zmq_send 发送消息了）
         attach_pipe(new_pipes[0], subscribe_to_all, true);
         newpipe = new_pipes[0];
 
@@ -1273,7 +1273,7 @@ int zmq::socket_base_t::send(msg_t *msg_, int flags_)
     }
 
     //  Process pending commands, if any.
-    // Attention: 这里会处理 pending 的命令（demo: test_channel.cpp）
+    // 处理 pending 的命令。比如 session 发送给 socket 的 bind pipe 的命令(socket 需要绑定本端 pipe，然后才能和 session 进行数据交换)
     int rc = process_commands(0, true);
     if (unlikely(rc != 0))
     {
@@ -1443,6 +1443,7 @@ int zmq::socket_base_t::recv(msg_t *msg_, int flags_)
      */
     while (true)
     {
+        // 处理从其他模块发送给 socket 的命令（比如需要处理 session 发送给 socket 的 bind pipe 的命令）
         if (unlikely(process_commands(block ? timeout : 0, false) != 0))
         {
             return -1;

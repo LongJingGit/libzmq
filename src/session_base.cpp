@@ -158,7 +158,7 @@ void zmq::session_base_t::attach_pipe(pipe_t *pipe_)
 
 int zmq::session_base_t::pull_msg(msg_t *msg_)
 {
-    if (!_pipe || !_pipe->read(msg_))
+    if (!_pipe || !_pipe->read(msg_))       // session 从和 socket 通信的管道中读取数据
     {
         errno = EAGAIN;
         return -1;
@@ -174,13 +174,14 @@ int zmq::session_base_t::push_msg(msg_t *msg_)
     //  pass subscribe/cancel to the sockets
     if ((msg_->flags() & msg_t::command) && !msg_->is_subscribe() && !msg_->is_cancel())
         return 0;
-    if (_pipe && _pipe->write(msg_))
+    if (_pipe && _pipe->write(msg_))        // session 将数据写入到和 socket 通信的管道中
     {
         const int rc = msg_->init();
         errno_assert(rc == 0);
         return 0;
     }
 
+    // 缓冲区已经被写满
     errno = EAGAIN;
     return -1;
 }
@@ -425,7 +426,7 @@ void zmq::session_base_t::process_attach(i_engine *engine_)
 // 创建 session 和 socket 通信的 pipe，并将 pipe 绑定到 session 和 socket。便于 session 和 socket 进行数据交换
 void zmq::session_base_t::engine_ready()
 {
-    //  Create the pipe if it does not exist yet.
+    //  Create the pipe if it does not exist yet.(如果是 tcp client 端，则 socket_base_t::connect_internal 中已经创建并 attach 了 pipe)
     if (!_pipe && !is_terminating())
     {
         object_t *parents[2] = {this, _socket};
@@ -454,7 +455,7 @@ void zmq::session_base_t::engine_ready()
 
         //  Ask socket to plug into the remote end of the pipe.
         // 发送命令给 socket，将 pipes[1] 绑定到 socket
-        send_bind(_socket, pipes[1]);           // 注意，这里并不是将命令发送给 IO 线程，而是发送给 socket
+        send_bind(_socket, pipes[1]);           // 注意，这里并不是将命令发送给 IO 线程，而是发送给 socket（socket 会在合适的时机处理该命令）
     }
 }
 

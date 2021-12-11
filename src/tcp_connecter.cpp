@@ -87,6 +87,11 @@ void zmq::tcp_connecter_t::process_term(int linger_)
 }
 
 // EPOLLOUT 事件触发：并不一定是 socket 可写数据，也有可能是 socket 发生了错误（比如连接拒绝或者无可用内存，这也会被内核标记为可写）
+/**
+ * EPOLLOUT 事件触发的两种条件：
+ * 1. 连接建立
+ * 2. socket 可写(缓冲区从不可写变为可写或者socket发生错误)
+ */
 void zmq::tcp_connecter_t::out_event()
 {
     if (_connect_timer_started)
@@ -143,22 +148,22 @@ void zmq::tcp_connecter_t::timer_event(int id_)
 
 void zmq::tcp_connecter_t::start_connecting()
 {
-    //  Open the connecting socket.
+    //  Open the connecting socket.(创建非阻塞 socket 并 connect)
     const int rc = open();
 
     //  Connect may succeed in synchronous manner.
     if (rc == 0)
     {
-        // 这里需要补充的是：如果马上建立了 tcp 连接，则 server 端的 conn_fd 的 EPOLLOUT 立刻会被触发，server 会发送 greeting 消息给 client 端
-        _handle = add_fd(_s);       // 将 conn_fd 注册到内核监听队列中
-        out_event();
+        // 这里需要补充的是：如果马上建立了 tcp 连接，则 server 端的 conn_fd 的 EPOLLOUT 立刻会被触发(对端马上就可以发送数据)
+        _handle = add_fd(_s);       // 注册 conn_fd 描述符给 epoll(此时还没有注册 conn_fd 的 EPOLLIN 和 EPOLLOUT 事件)
+        out_event();        // 尝试直接从 conn_fd 读取数据，并不需要等待 epoll 返回
     }
 
     //  Connection establishment may be delayed. Poll for its completion.
     else if (rc == -1 && errno == EINPROGRESS)
     {
-        _handle = add_fd(_s);   // 如果返回的错误码是 EINPROGRESS，则表示正在连接中，需要将 conn_fd 加入到内核监听队列，监听 EPOLLOUT 事件
-        set_pollout(_handle);
+        _handle = add_fd(_s);   // 如果返回的错误码是 EINPROGRESS，则表示正在连接中，需要将 conn_fd 加入到内核监听队列，并监听 EPOLLOUT 事件
+        set_pollout(_handle);   // 监听 conn_fd 的 EPOLLOUT 事件（当连接建立的时候会触发 EPOLLOUT 事件）
         _socket->event_connect_delayed(make_unconnected_connect_endpoint_pair(_endpoint), zmq_errno());
 
         //  add userspace connect timeout
@@ -166,6 +171,7 @@ void zmq::tcp_connecter_t::start_connecting()
     }
 
     //  Handle any other error condition by eventual reconnect.
+    // 如果 server 端还未启动，则会启动定时器，不断尝试重连
     else
     {
         if (_s != retired_fd)
@@ -207,7 +213,7 @@ int zmq::tcp_connecter_t::open()
     zmq_assert(_addr->resolved.tcp_addr != NULL);
 
     // Set the socket to non-blocking mode so that we get async connect().
-    unblock_socket(_s);
+    unblock_socket(_s);     // 设置 socket 为非阻塞模式
 
     const tcp_address_t *const tcp_addr = _addr->resolved.tcp_addr;
 

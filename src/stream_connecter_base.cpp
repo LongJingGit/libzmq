@@ -110,6 +110,7 @@ void zmq::stream_connecter_base_t::add_reconnect_timer ()
     }
 }
 
+// 新的重试间隔为：当前间隔+随机数
 int zmq::stream_connecter_base_t::get_new_reconnect_ivl ()
 {
     //  TODO should the random jitter be really based on the configured initial

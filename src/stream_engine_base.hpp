@@ -154,7 +154,7 @@ protected:
     size_t _outsize;
     i_encoder *_encoder;
 
-    mechanism_t *_mechanism;
+    mechanism_t *_mechanism;            // ZMTP 协议使用
 
     int (stream_engine_base_t::*_next_msg)(msg_t *msg_);
     int (stream_engine_base_t::*_process_msg)(msg_t *msg_);

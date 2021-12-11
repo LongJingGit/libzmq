@@ -194,7 +194,7 @@ void zmq::stream_engine_base_t::plug(io_thread_t *io_thread_, session_base_t *se
     //  Connect to I/O threads poller object.
     io_object_t::plug(io_thread_);
 
-    // 将连接 socket 加入到 poller 的内核监听队列中
+    // 将连接 socket 加入到 poller 的内核监听队列中(在具体的 engine 中会设置 in_event 和 out_event)
     _handle = add_fd(_s);
     _io_error = false;
 
@@ -249,7 +249,7 @@ void zmq::stream_engine_base_t::terminate()
 /***
  * 有数据可读有两种情况：
  * 1. 监听 conn_fd 被触发，从 epoll 返回，调用到 in_event()
- * 2. 在 zmtp_engine_t::plug_internal() 中直接调用。调用到 plug_internal() 表明已经完成了连接。所以在这里直接调用 in_event() 尝试从 socket 中读取数据，并不一定要等到 epoll 返回才可以
+ * 2. 在 zmtp_engine_t::plug_internal()/raw_engine_t::plug_internal 中直接调用。调用到 plug_internal() 表明已经完成了连接。所以在这里直接调用 in_event() 尝试从 socket 中读取数据，并不一定要等到 epoll 返回才可以
  */
 void zmq::stream_engine_base_t::in_event()
 {
@@ -283,12 +283,12 @@ bool zmq::stream_engine_base_t::in_event_internal()
             if (_mechanism == NULL && _has_handshake_stage)
                 _session->engine_ready();
         }
-        // 如果对端没有发送 greeting 消息，则返回失败
+        // greeting 的过程需要双方收发两条消息，所以只有第二条 greeting 完全接收完之后，handshake() 才会返回 true，其他情况都返回 false
         else
             return false;
     }
 
-    /**     handshake() 成功之后才会执行到这里      **/
+    /****************handshake() 返回 true 之后才会执行到这里**************/
 
     zmq_assert(_decoder);
 
@@ -311,8 +311,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
         // 在这里分配了 buffer 的内存，并让 _inpos 指向这块 buffer
         _decoder->get_buffer(&_inpos, &bufsize);
 
-        // engine 在这里和内核实际进行数据交互（从内核读取数据）
-        const int rc = read(_inpos, bufsize);
+        const int rc = read(_inpos, bufsize);       // engine 从内核读取数据
 
         if (rc == -1)
         {
@@ -341,7 +340,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
         _insize -= processed;
         if (rc == 0 || rc == -1)
             break;
-        rc = (this->*_process_msg)(_decoder->msg()); // 处理从内核读取到的数据
+        rc = (this->*_process_msg)(_decoder->msg()); // 将从内核读取到的数据push给session(push_raw_msg_to_session)
         if (rc == -1)
             break;
     }
@@ -355,6 +354,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
             error(protocol_error);
             return false;
         }
+        // 如果 errno == EAGAIN，说明缓冲区已经被写满，需要停止写入，从内核监听队列删除 EPOLLIN 事件，不再监听 EPOLLIN 事件
         _input_stopped = true;
         reset_pollin(_handle);
     }
@@ -402,7 +402,7 @@ void zmq::stream_engine_base_t::out_event()
 
         while (_outsize < static_cast<size_t>(_options.out_batch_size))
         {
-            if ((this->*_next_msg)(&_tx_msg) == -1)
+            if ((this->*_next_msg)(&_tx_msg) == -1)         // pull_msg_from_session
             {
                 //  ws_engine can cause an engine error and delete it, so
                 //  bail out immediately to avoid use-after-free
@@ -434,7 +434,7 @@ void zmq::stream_engine_base_t::out_event()
     //  arbitrarily large. However, we assume that underlying TCP layer has
     //  limited transmission buffer and thus the actual number of bytes
     //  written should be reasonably modest.
-    const int nbytes = write(_outpos, _outsize);
+    const int nbytes = write(_outpos, _outsize);        // engine 将数据写给 内核
 
     //  IO error has occurred. We stop waiting for output events.
     //  The engine is not terminated until we detect input error;

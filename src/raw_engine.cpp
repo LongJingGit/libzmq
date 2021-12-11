@@ -106,8 +106,8 @@ void zmq::raw_engine_t::plug_internal ()
         session ()->flush ();
     }
 
-    set_pollin ();
-    set_pollout ();
+    set_pollin ();      // 设置 conn_fd 的可读事件
+    set_pollout ();     // 设置 conn_fd 的可写事件
     //  Flush all the data that may have been already received downstream.
     in_event ();
 }

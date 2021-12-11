@@ -209,6 +209,7 @@ zmq::fd_t zmq::tcp_listener_t::accept()
     const fd_t sock = ::accept(_s, reinterpret_cast<struct sockaddr *>(&ss), &ss_len);
 #endif
 
+    // 接收连接失败
     if (sock == retired_fd)
     {
 #if defined ZMQ_HAVE_WINDOWS
