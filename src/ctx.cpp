@@ -824,6 +824,11 @@ void zmq::ctx_t::connect_pending(const char *addr_, zmq::socket_base_t *bind_soc
 {
     scoped_lock_t locker(_endpoints_sync);
 
+    /**
+     * std::multimap 底层是红黑树，所以数据插入进去的时候就有序了;
+     * std::multimap 可以插入相同的键;
+     * equal_range 返回一个 pair 对象(包含两个双向迭代器)，表示一个范围，该范围指向 multimap 中键为 key 的第一个位置和最后一个位置下一个元素的迭代器
+     */
     const std::pair<pending_connections_t::iterator, pending_connections_t::iterator> pending = _pending_connections.equal_range(addr_);
     for (pending_connections_t::iterator p = pending.first; p != pending.second; ++p)
         connect_inproc_sockets(bind_socket_, _endpoints[addr_].options, p->second, bind_side);
