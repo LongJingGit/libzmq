@@ -34,8 +34,7 @@
 #include "yqueue.hpp"
 #include "ypipe_base.hpp"
 
-namespace zmq
-{
+namespace zmq {
 //  Lock-free queue implementation.
 //  Only a single thread can read from the pipe at any specific moment.
 //  Only a single thread can write to the pipe at any specific moment.
@@ -43,19 +42,20 @@ namespace zmq
 //  N is granularity of the pipe, i.e. how many items are needed to
 //  perform next memory allocation.
 
-template <typename T, int N> class ypipe_t ZMQ_FINAL : public ypipe_base_t<T>
+template<typename T, int N>
+class ypipe_t ZMQ_FINAL : public ypipe_base_t<T>
 {
-  public:
+public:
     //  Initialises the pipe.
-    ypipe_t ()
+    ypipe_t()
     {
         //  Insert terminator element into the queue.
-        _queue.push ();
+        _queue.push();
 
         //  Let all the pointers to point to the terminator.
         //  (unless pipe is dead, in which case c is set to NULL).
-        _r = _w = _f = &_queue.back ();
-        _c.set (&_queue.back ());
+        _r = _w = _f = &_queue.back();
+        _c.set(&_queue.back());
     }
 
     //  Following function (write) deliberately copies uninitialised data
@@ -63,57 +63,58 @@ template <typename T, int N> class ypipe_t ZMQ_FINAL : public ypipe_base_t<T>
     //  non-VSM messages won't be good for performance.
 
 #ifdef ZMQ_HAVE_OPENVMS
-#pragma message save
-#pragma message disable(UNINIT)
+#    pragma message save
+#    pragma message disable(UNINIT)
 #endif
 
     //  Write an item to the pipe.  Don't flush it yet. If incomplete is
     //  set to true the item is assumed to be continued by items
     //  subsequently written to the pipe. Incomplete items are never
     //  flushed down the stream.
-    void write (const T &value_, bool incomplete_)
+    void write(const T &value_, bool incomplete_)
     {
         //  Place the value to the queue, add new terminator element.
-        _queue.back () = value_;
-        _queue.push ();
+        _queue.back() = value_; // 将消息指针存放到队列尾部
+        _queue.push();
 
         //  Move the "flush up to here" poiter.
         if (!incomplete_)
-            _f = &_queue.back ();
+            _f = &_queue.back(); // 只有发送完最后一帧消息，才会置 _f，对端的 check_read 才可以返回 true，对端此时才可以从队列头部读取数据
     }
 
 #ifdef ZMQ_HAVE_OPENVMS
-#pragma message restore
+#    pragma message restore
 #endif
 
     //  Pop an incomplete item from the pipe. Returns true if such
     //  item exists, false otherwise.
-    bool unwrite (T *value_)
+    bool unwrite(T *value_)
     {
-        if (_f == &_queue.back ())
+        if (_f == &_queue.back())
             return false;
-        _queue.unpush ();
-        *value_ = _queue.back ();
+        _queue.unpush();
+        *value_ = _queue.back();
         return true;
     }
 
     //  Flush all the completed items into the pipe. Returns false if
     //  the reader thread is sleeping. In that case, caller is obliged to
     //  wake the reader up before using the pipe again.
-    bool flush ()
+    bool flush()
     {
         //  If there are no un-flushed items, do nothing.
         if (_w == _f)
             return true;
 
         //  Try to set 'c' to 'f'.
-        if (_c.cas (_w, _f) != _w) {
+        if (_c.cas(_w, _f) != _w)
+        {
             //  Compare-and-swap was unseccessful because 'c' is NULL.
             //  This means that the reader is asleep. Therefore we don't
             //  care about thread-safeness and update c in non-atomic
             //  manner. We'll return false to let the caller know
             //  that reader is sleeping.
-            _c.set (_f);
+            _c.set(_f);
             _w = _f;
             return false;
         }
@@ -125,23 +126,23 @@ template <typename T, int N> class ypipe_t ZMQ_FINAL : public ypipe_base_t<T>
     }
 
     //  Check whether item is available for reading.
-    bool check_read ()
+    bool check_read()
     {
         //  Was the value prefetched already? If so, return.
-        if (&_queue.front () != _r && _r)
+        if (&_queue.front() != _r && _r)
             return true;
 
         //  There's no prefetched value, so let us prefetch more values.
         //  Prefetching is to simply retrieve the
         //  pointer from c in atomic fashion. If there are no
         //  items to prefetch, set c to NULL (using compare-and-swap).
-        _r = _c.cas (&_queue.front (), NULL);
+        _r = _c.cas(&_queue.front(), NULL);
 
         //  If there are no elements prefetched, exit.
         //  During pipe's lifetime r should never be NULL, however,
         //  it can happen during pipe shutdown when items
         //  are being deallocated.
-        if (&_queue.front () == _r || !_r)
+        if (&_queue.front() == _r || !_r)
             return false;
 
         //  There was at least one value prefetched.
@@ -150,31 +151,31 @@ template <typename T, int N> class ypipe_t ZMQ_FINAL : public ypipe_base_t<T>
 
     //  Reads an item from the pipe. Returns false if there is no value.
     //  available.
-    bool read (T *value_)
+    bool read(T *value_)
     {
         //  Try to prefetch a value.
-        if (!check_read ())
+        if (!check_read())
             return false;
 
         //  There was at least one value prefetched.
         //  Return it to the caller.
-        *value_ = _queue.front ();
-        _queue.pop ();
+        *value_ = _queue.front(); // 从队列头部取消息
+        _queue.pop();
         return true;
     }
 
     //  Applies the function fn to the first elemenent in the pipe
     //  and returns the value returned by the fn.
     //  The pipe mustn't be empty or the function crashes.
-    bool probe (bool (*fn_) (const T &))
+    bool probe(bool (*fn_)(const T &))
     {
-        const bool rc = check_read ();
-        zmq_assert (rc);
+        const bool rc = check_read();
+        zmq_assert(rc);
 
-        return (*fn_) (_queue.front ());
+        return (*fn_)(_queue.front());
     }
 
-  protected:
+protected:
     //  Allocation-efficient queue to store pipe items.
     //  Front of the queue points to the first prefetched item, back of
     //  the pipe points to last un-flushed item. Front is used only by
@@ -198,8 +199,8 @@ template <typename T, int N> class ypipe_t ZMQ_FINAL : public ypipe_base_t<T>
     //  atomic operations.
     atomic_ptr_t<T> _c;
 
-    ZMQ_NON_COPYABLE_NOR_MOVABLE (ypipe_t)
+    ZMQ_NON_COPYABLE_NOR_MOVABLE(ypipe_t)
 };
-}
+} // namespace zmq
 
 #endif
