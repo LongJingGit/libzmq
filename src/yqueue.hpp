@@ -36,8 +36,7 @@
 #include "err.hpp"
 #include "atomic_ptr.hpp"
 
-namespace zmq
-{
+namespace zmq {
 //  yqueue is an efficient queue implementation. The main goal is
 //  to minimise number of allocations/deallocations needed. Thus yqueue
 //  allocates/deallocates elements in batches of N.
@@ -57,17 +56,19 @@ namespace zmq
 // architectures where cache lines are <= 64 bytes (e.g. most things
 // except POWER). It is detected at build time to try to account for other
 // platforms like POWER and s390x.
-template <typename T, int N, size_t ALIGN = ZMQ_CACHELINE_SIZE> class yqueue_t
+template<typename T, int N, size_t ALIGN = ZMQ_CACHELINE_SIZE>
+class yqueue_t
 #else
-template <typename T, int N> class yqueue_t
+template<typename T, int N>
+class yqueue_t
 #endif
 {
-  public:
+public:
     //  Create the queue.
-    inline yqueue_t ()
+    inline yqueue_t()
     {
-        _begin_chunk = allocate_chunk ();
-        alloc_assert (_begin_chunk);
+        _begin_chunk = allocate_chunk();
+        alloc_assert(_begin_chunk);
         _begin_pos = 0;
         _back_chunk = NULL;
         _back_pos = 0;
@@ -76,32 +77,40 @@ template <typename T, int N> class yqueue_t
     }
 
     //  Destroy the queue.
-    inline ~yqueue_t ()
+    inline ~yqueue_t()
     {
-        while (true) {
-            if (_begin_chunk == _end_chunk) {
-                free (_begin_chunk);
+        while (true)
+        {
+            if (_begin_chunk == _end_chunk)
+            {
+                free(_begin_chunk);
                 break;
             }
             chunk_t *o = _begin_chunk;
             _begin_chunk = _begin_chunk->next;
-            free (o);
+            free(o);
         }
 
-        chunk_t *sc = _spare_chunk.xchg (NULL);
-        free (sc);
+        chunk_t *sc = _spare_chunk.xchg(NULL);
+        free(sc);
     }
 
     //  Returns reference to the front element of the queue.
     //  If the queue is empty, behaviour is undefined.
-    inline T &front () { return _begin_chunk->values[_begin_pos]; }
+    inline T &front()
+    {
+        return _begin_chunk->values[_begin_pos];
+    }
 
     //  Returns reference to the back element of the queue.
     //  If the queue is empty, behaviour is undefined.
-    inline T &back () { return _back_chunk->values[_back_pos]; }
+    inline T &back()
+    {
+        return _back_chunk->values[_back_pos];
+    }
 
     //  Adds an element to the back end of the queue.
-    inline void push ()
+    inline void push()
     {
         _back_chunk = _end_chunk;
         _back_pos = _end_pos;
@@ -109,13 +118,16 @@ template <typename T, int N> class yqueue_t
         if (++_end_pos != N)
             return;
 
-        chunk_t *sc = _spare_chunk.xchg (NULL);
-        if (sc) {
+        chunk_t *sc = _spare_chunk.xchg(NULL);
+        if (sc)
+        {
             _end_chunk->next = sc;
             sc->prev = _end_chunk;
-        } else {
-            _end_chunk->next = allocate_chunk ();
-            alloc_assert (_end_chunk->next);
+        }
+        else
+        {
+            _end_chunk->next = allocate_chunk();
+            alloc_assert(_end_chunk->next);
             _end_chunk->next->prev = _end_chunk;
         }
         _end_chunk = _end_chunk->next;
@@ -129,12 +141,13 @@ template <typename T, int N> class yqueue_t
     //  unpush is called. It cannot be done automatically as the read
     //  side of the queue can be managed by different, completely
     //  unsynchronised thread.
-    inline void unpush ()
+    inline void unpush()
     {
         //  First, move 'back' one position backwards.
         if (_back_pos)
             --_back_pos;
-        else {
+        else
+        {
             _back_pos = N - 1;
             _back_chunk = _back_chunk->prev;
         }
@@ -145,18 +158,20 @@ template <typename T, int N> class yqueue_t
         //  instead of a simple free.
         if (_end_pos)
             --_end_pos;
-        else {
+        else
+        {
             _end_pos = N - 1;
             _end_chunk = _end_chunk->prev;
-            free (_end_chunk->next);
+            free(_end_chunk->next);
             _end_chunk->next = NULL;
         }
     }
 
     //  Removes an element from the front end of the queue.
-    inline void pop ()
+    inline void pop()
     {
-        if (++_begin_pos == N) {
+        if (++_begin_pos == N)
+        {
             chunk_t *o = _begin_chunk;
             _begin_chunk = _begin_chunk->next;
             _begin_chunk->prev = NULL;
@@ -165,12 +180,12 @@ template <typename T, int N> class yqueue_t
             //  'o' has been more recently used than _spare_chunk,
             //  so for cache reasons we'll get rid of the spare and
             //  use 'o' as the spare.
-            chunk_t *cs = _spare_chunk.xchg (o);
-            free (cs);
+            chunk_t *cs = _spare_chunk.xchg(o);
+            free(cs);
         }
     }
 
-  private:
+private:
     //  Individual memory chunk to hold N elements.
     struct chunk_t
     {
@@ -179,15 +194,15 @@ template <typename T, int N> class yqueue_t
         chunk_t *next;
     };
 
-    static inline chunk_t *allocate_chunk ()
+    static inline chunk_t *allocate_chunk()
     {
 #ifdef HAVE_POSIX_MEMALIGN
         void *pv;
-        if (posix_memalign (&pv, ALIGN, sizeof (chunk_t)) == 0)
-            return (chunk_t *) pv;
+        if (posix_memalign(&pv, ALIGN, sizeof(chunk_t)) == 0)
+            return (chunk_t *)pv;
         return NULL;
 #else
-        return static_cast<chunk_t *> (malloc (sizeof (chunk_t)));
+        return static_cast<chunk_t *>(malloc(sizeof(chunk_t)));
 #endif
     }
 
@@ -207,8 +222,8 @@ template <typename T, int N> class yqueue_t
     //  us from having to call malloc/free.
     atomic_ptr_t<chunk_t> _spare_chunk;
 
-    ZMQ_NON_COPYABLE_NOR_MOVABLE (yqueue_t)
+    ZMQ_NON_COPYABLE_NOR_MOVABLE(yqueue_t)
 };
-}
+} // namespace zmq
 
 #endif
