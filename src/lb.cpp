@@ -45,6 +45,12 @@ zmq::lb_t::~lb_t()
     zmq_assert(_pipes.empty());
 }
 
+/**
+ * socket 和 session 的通信管道建立完成之后就会执行到这里
+ *
+ * socket 做服务端：server 和 client 连接完全建立之后，会创建 pipe 并发送命令给 socket attach pipe
+ * socket 做客户端：client 执行 zmq_connect 的时候就会创建 pipe，然后执行 attach
+ */
 void zmq::lb_t::attach(pipe_t *pipe_)
 {
     _pipes.push_back(pipe_);
@@ -151,17 +157,18 @@ int zmq::lb_t::sendpipe(msg_t *msg_, pipe_t **pipe_)
 
     //  If it's final part of the message we can flush it downstream and
     //  continue round-robining (load balance).
+    // 向一个 socket 发送完消息之后，才会给第二个 socket 发送消息
     _more = (msg_->flags() & msg_t::more) != 0;
     if (!_more)
     {
         _pipes[_current]->flush(); // 消息发送完毕，flush 消息（如果发送的是多帧，只有当多帧的最后一帧发送完毕，才会 flush 消息）
 
-        if (++_current >= _active)
+        if (++_current >= _active)      // round robin
             _current = 0;
     }
 
     //  Detach the message from the data buffer.
-    const int rc = msg_->init();
+    const int rc = msg_->init();        // 注意：应用层发送的消息在这里被 detach，所以应用层无法获取到发送的消息
     errno_assert(rc == 0);
 
     return 0;

@@ -109,7 +109,7 @@ private:
 
     // If true, report EAGAIN to the caller instead of silently dropping
     // the message targeting an unknown peer.
-    bool _mandatory;
+    bool _mandatory;        // 如果为 true，则向调用者报告 EAGAIN，而不是静默地丢弃针对未知 peer 的消息
     bool _raw_socket;
 
     // if true, send an empty message to every connected router peer

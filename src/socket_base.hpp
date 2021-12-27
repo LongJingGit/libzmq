@@ -264,7 +264,7 @@ private:
 
     //  List of attached pipes.
     typedef array_t<pipe_t, 3> pipes_t;
-    pipes_t _pipes;
+    pipes_t _pipes;     // socket 和 session 通信的管道（可能在 socket_base_t::connect 或者 session_base_t::engine_ready 中创建）
 
     //  Reaper's poller and handle of this socket within it.
     poller_t *_poller;
@@ -347,7 +347,7 @@ protected:
 private:
     //  Outbound pipes indexed by the peer IDs.
     typedef std::map<blob_t, out_pipe_t> out_pipes_t;
-    out_pipes_t _out_pipes;
+    out_pipes_t _out_pipes;         // 套接字标识和对应的 pipe 的映射关系
 
     // Next assigned name on a zmq_connect() call used by ROUTER and STREAM socket types
     std::string _connect_routing_id;

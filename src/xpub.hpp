@@ -75,7 +75,7 @@ class xpub_t : public socket_base_t
     static void mark_as_matching (zmq::pipe_t *pipe_, xpub_t *self_);
 
     //  List of all subscriptions mapped to corresponding pipes.
-    mtrie_t _subscriptions;
+    mtrie_t _subscriptions;     // 需要订阅的消息的列表
 
     //  List of manual subscriptions mapped to corresponding pipes.
     mtrie_t _manual_subscriptions;

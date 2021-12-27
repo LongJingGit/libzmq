@@ -88,7 +88,7 @@ class xsub_t : public socket_base_t
 #ifdef ZMQ_USE_RADIX_TREE
     radix_tree_t _subscriptions;
 #else
-    trie_t _subscriptions;
+    trie_t _subscriptions;      // 保存着需要订阅的消息（sub 接收消息调用的是 xsub 的 recv 接口，在接收消息的时候会判断是否是需要接收的消息类型）
 #endif
 
     //  If true, 'message' contains a matching message to return on the

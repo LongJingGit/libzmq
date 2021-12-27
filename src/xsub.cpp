@@ -68,6 +68,7 @@ void zmq::xsub_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool local
     _dist.attach(pipe_);
 
     //  Send all the cached subscriptions to the new upstream peer.
+    // 发送订阅消息给对端（这时只是发送给了和 session 通信的管道，并没有发送给对端 socket）
     _subscriptions.apply(send_subscription, pipe_);
     pipe_->flush();
 }
@@ -129,6 +130,12 @@ int zmq::xsub_t::xsend(msg_t *msg_)
         return _dist.send_to_all(msg_);
     }
 
+    /**
+     * @brief 如果是订阅消息，则需要进行相应的处理
+     * 对订阅消息的判断：
+     *  1. 设置标志位(is_subscribe() 返回 true)，该标志位可能是在 sub_t::xsetsockopt 中调用 msg.init_subscribe 设置的
+     *  2. msg 的数据包 size 大于 0 且 数据内容为 1
+     */
     if (msg_->is_subscribe() || (size > 0 && *data == 1))
     {
         //  Process subscribe message
@@ -136,12 +143,13 @@ int zmq::xsub_t::xsend(msg_t *msg_)
         //  however this is alread done on the XPUB side and
         //  doing it here as well breaks ZMQ_XPUB_VERBOSE
         //  when there are forwarding devices involved.
+        // 这用于过滤重复订阅，但是在XPUB端已经这样做了。在这里这样做也会在涉及到转发设备时中断ZMQ_XPUB_VERBOSE。
         if (!msg_->is_subscribe())
         {
             data = data + 1;
             size = size - 1;
         }
-        _subscriptions.add(data, size);
+        _subscriptions.add(data, size);         // 更新 _subscriptions，保存需要订阅的消息列表（sub 接收消息的时候会使用到该数据结构）
         _process_subscribe = true;
         return _dist.send_to_all(msg_);
     }
@@ -201,7 +209,7 @@ int zmq::xsub_t::xrecv(msg_t *msg_)
         if (rc != 0)
             return -1;
 
-        //  Check whether the message matches at least one subscription.
+        //  Check whether the message matches at least one subscription.（检查消息是否匹配某一个订阅消息）
         //  Non-initial parts of the message are passed
         if (_more_recv || !options.filter || match(msg_))
         {
@@ -262,6 +270,7 @@ bool zmq::xsub_t::xhas_in()
     }
 }
 
+// 检查是否是订阅的消息
 bool zmq::xsub_t::match(msg_t *msg_)
 {
     const bool matching = _subscriptions.check(static_cast<unsigned char *>(msg_->data()), msg_->size());
@@ -284,6 +293,10 @@ void zmq::xsub_t::send_subscription(unsigned char *data_, size_t size_, void *ar
     //  the subscription message instead. This matches the behaviour of
     //  zmq_setsockopt(ZMQ_SUBSCRIBE, ...), which also drops subscriptions
     //  when the SNDHWM is reached.
+    /**
+     * 如果到达 SNDHWM，无法发送订阅消息，则删除订阅消息。
+     * 这与 zmq_setsockopt(ZMQ_SUBSCRIBE，…) 的行为相匹配，当到达 SNDHWM 时，ZMQ_SUBSCRIBE 也会丢掉订阅消息
+     */
     if (!sent)
         msg.close();
 }

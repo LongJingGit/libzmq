@@ -168,8 +168,8 @@ private:
     ~pipe_t() ZMQ_OVERRIDE;
 
     //  Underlying pipes for both directions.
-    upipe_t *_in_pipe;  // 无锁队列
-    upipe_t *_out_pipe; // 无锁队列
+    upipe_t *_in_pipe;  // 输入管道(无锁队列)：session 将消息写入到该管道，socket 从该管道读取数据
+    upipe_t *_out_pipe; // 输出管道(无锁队列)：socket 将消息写到该管道，session 从该管道读取消息
 
     //  Can the pipe be read from / written to?
     bool _in_active;

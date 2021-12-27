@@ -64,6 +64,8 @@ zmq::xpub_t::~xpub_t()
             LIBZMQ_DELETE(*it);
 }
 
+// 在使用 zmq_recv 接收消息的时候，会在真正读取数据之前，先处理可能从其他线程或者模块发送过来的命令
+// 比如监听到连接之后，会创建 engine 和 session。然后创建 pipe，并将 pipe[0] 绑定到 socket(通过发送命令的方式)。如果 pipe 被激活，则可以直接读取订阅消息
 void zmq::xpub_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool locally_initiated_)
 {
     LIBZMQ_UNUSED(locally_initiated_);
@@ -90,6 +92,7 @@ void zmq::xpub_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool local
 
     //  The pipe is active when attached. Let's read the subscriptions from
     //  it, if any.
+    // 注意: 这里只可能读取到的是订阅消息, 不可能是其他消息（pub socket）
     xread_activated(pipe_);
 }
 
@@ -153,6 +156,7 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
                 }
                 else
                 {
+                    // 如果是 sub 发送过来的 订阅消息，则 xpub 会在这里进行相应处理（_subscriptions），发送消息的时候会对 _subscriptions 进行判断
                     const bool first_added = _subscriptions.add(data, size, pipe_);
                     notify = first_added || _verbose_subs;
                 }
@@ -180,7 +184,7 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
                     *notification.data() = 0;
                 memcpy(notification.data() + 1, data, size);
 
-                _pending_data.push_back(ZMQ_MOVE(notification));
+                _pending_data.push_back(ZMQ_MOVE(notification));       // 将接收到的消息保存到 vector 中
                 if (metadata)
                     metadata->add_ref();
                 _pending_metadata.push_back(metadata);
@@ -314,6 +318,7 @@ void zmq::xpub_t::mark_last_pipe_as_matching(pipe_t *pipe_, xpub_t *self_)
         self_->_dist.match(pipe_);
 }
 
+// 在发送端会过滤消息
 int zmq::xpub_t::xsend(msg_t *msg_)
 {
     const bool msg_more = (msg_->flags() & msg_t::more) != 0;
@@ -324,13 +329,17 @@ int zmq::xpub_t::xsend(msg_t *msg_)
         // Ensure nothing from previous failed attempt to send is left matched
         _dist.unmatch();
 
+        // 这里只会发送 SUB 订阅的消息：判断该消息是否是订阅的消息（_subscriptions 的赋值是在 xread_activated 中完成的）
         if (unlikely(_manual && _last_pipe && _send_last_pipe))
         {
             _subscriptions.match(static_cast<unsigned char *>(msg_->data()), msg_->size(), mark_last_pipe_as_matching, this);
             _last_pipe = NULL;
         }
         else
+        {
             _subscriptions.match(static_cast<unsigned char *>(msg_->data()), msg_->size(), mark_as_matching, this);
+        }
+
         // If inverted matching is used, reverse the selection now
         if (options.invert_matching)
         {
@@ -339,7 +348,7 @@ int zmq::xpub_t::xsend(msg_t *msg_)
     }
 
     int rc = -1; //  Assume we fail
-    if (_lossy || _dist.check_hwm())
+    if (_lossy || _dist.check_hwm())            // 检查 HWM（如果 check_hwm 返回失败，则不再继续发送消息，并设置错误码为 EAGAIN）
     {
         if (_dist.send_to_matching(msg_) == 0)
         {
@@ -361,10 +370,11 @@ bool zmq::xpub_t::xhas_out()
     return _dist.has_out();
 }
 
+// 一般情况下，不能使用 pub 类套接字接收消息（但是订阅消息除外）
 int zmq::xpub_t::xrecv(msg_t *msg_)
 {
     //  If there is at least one
-    if (_pending_data.empty())
+    if (_pending_data.empty())      // 接收到的(订阅)消息在 xpub_t::xread_activated 中被提前接收，并且保存到 vector 中
     {
         errno = EAGAIN;
         return -1;

@@ -434,7 +434,7 @@ void zmq::session_base_t::engine_ready()
 
         const bool conflate = get_effective_conflate_option(options);
 
-        int hwms[2] = {conflate ? -1 : options.rcvhwm, conflate ? -1 : options.sndhwm};
+        int hwms[2] = {conflate ? -1 : options.rcvhwm, conflate ? -1 : options.sndhwm};         // 设置 HWM
         bool conflates[2] = {conflate, conflate};
         // 创建 session 和 socket 通信的 pipe
         const int rc = pipepair(parents, pipes, hwms, conflates);
@@ -454,8 +454,13 @@ void zmq::session_base_t::engine_ready()
         pipes[1]->set_endpoint_pair(_engine->get_endpoint());
 
         //  Ask socket to plug into the remote end of the pipe.
-        // 发送命令给 socket，将 pipes[1] 绑定到 socket
-        send_bind(_socket, pipes[1]);           // 注意，这里并不是将命令发送给 IO 线程，而是发送给 socket（socket 会在合适的时机处理该命令）
+        /**
+         * @brief 发送命令给 socket，将 pipes[1] 绑定到 socket
+         *
+         * 注意，这里并不是将命令发送给 IO 线程，而是发送给 socket。
+         * socket 会在合适的时机处理该命令，比如调用 zmq_send 或者 zmq_recv 的时候会先处理 pending 的消息
+         */
+        send_bind(_socket, pipes[1]);
     }
 }
 

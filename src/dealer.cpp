@@ -131,11 +131,13 @@ void zmq::dealer_t::xpipe_terminated(pipe_t *pipe_)
     _lb.pipe_terminated(pipe_);
 }
 
+// 以负载均衡的方式将消息发送给已连接的节点
 int zmq::dealer_t::sendpipe(msg_t *msg_, pipe_t **pipe_)
 {
     return _lb.sendpipe(msg_, pipe_);
 }
 
+// 使用公平队列处理接收到的消息
 int zmq::dealer_t::recvpipe(msg_t *msg_, pipe_t **pipe_)
 {
     return _fq.recvpipe(msg_, pipe_);

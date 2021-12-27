@@ -66,7 +66,7 @@ int zmq::sub_t::xsetsockopt(int option_, const void *optval_, size_t optvallen_)
     errno_assert(rc == 0);
 
     //  Pass it further on in the stack.
-    rc = xsub_t::xsend(&msg);
+    rc = xsub_t::xsend(&msg);       // sub 只能接收消息，如果想要发送消息，需要使用基类 xsub_t 的 send 接口
     return close_and_return(&msg, rc);
 }
 

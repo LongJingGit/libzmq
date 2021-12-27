@@ -70,18 +70,26 @@ zmq::router_t::~router_t()
     _prefetched_msg.close();
 }
 
+/**
+ * 如果 router 做客户端，会在 socket_base_t::connect --> xattach_pipe，但是在这里 routing_id_ok 会为 false(因为还没读取到对端发送过来的空消息，无法生成 UUID)，所以不会 _fq.attach(pipe_)。当连接完全建立之后，对端会发送空消息，然后 router 在 router_t::xread_activated 中读取空消息，为对端生成 UUID 标识，并执行 _fq.attach(pipe_)
+ *
+ * 如果 router 做服务端，会在连接建立之后，session_base_t::engine_ready 创建 pipe，并给 socket 发送 bind 命令。socket 在 zmq_recv 的时候会处理该命令，然后读取对端发送过来的空消息，并为其生成 UUID
+ *
+ * 注意：rep 继承于 router
+ */
 void zmq::router_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool locally_initiated_)
 {
     LIBZMQ_UNUSED(subscribe_to_all_);
 
     zmq_assert(pipe_);
 
-    if (_probe_router)
+    if (_probe_router)          // 如果设置了 ZMQ_PROBE_ROUTER，则会给对端发送(带有套接字标识)空消息
     {
         msg_t probe_msg;
         int rc = probe_msg.init();
         errno_assert(rc == 0);
 
+        // 注意：这里发送消息，只是将消息写给了和 socket 通信的管道。后面会由 session 从 pipe 读取消息，并交给 engine 发送给内核
         rc = pipe_->write(&probe_msg);
         // zmq_assert (rc) is not applicable here, since it is not a bug.
         LIBZMQ_UNUSED(rc);
@@ -92,8 +100,8 @@ void zmq::router_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool loc
         errno_assert(rc == 0);
     }
 
-    const bool routing_id_ok = identify_peer(pipe_, locally_initiated_);
-    if (routing_id_ok)
+    const bool routing_id_ok = identify_peer(pipe_, locally_initiated_);    // 识别对端 routing_id（会读取消息）
+    if (routing_id_ok)  // 如果对端确实发送了空消息或者含有 routing_id 的消息
         _fq.attach(pipe_);
     else
         _anonymous_pipes.insert(pipe_);
@@ -174,6 +182,8 @@ void zmq::router_t::xpipe_terminated(pipe_t *pipe_)
     }
 }
 
+// 如果 router 是客户端，会在这里读取对端发送过来的空消息
+// 如果 sessoin 向 pipe 中写入了数据，则会发送命令给 socket，socket 在 zmq_recv 之前会先处理该命令
 void zmq::router_t::xread_activated(pipe_t *pipe_)
 {
     const std::set<pipe_t *>::iterator it = _anonymous_pipes.find(pipe_);
@@ -208,6 +218,7 @@ int zmq::router_t::xsend(msg_t *msg_)
             //  Find the pipe associated with the routing id stored in the prefix.
             //  If there's no such pipe just silently ignore the message, unless
             //  router_mandatory is set.
+            // 该消息是含有套接字标识(routing_id)的消息，主要是用来寻找路由方向(发送给哪个套接字)，所以找到之后就无需发送了，直接关闭
             out_pipe_t *out_pipe = lookup_out_pipe(blob_t(static_cast<unsigned char *>(msg_->data()), msg_->size(), zmq::reference_tag_t()));
 
             if (out_pipe)
@@ -344,7 +355,9 @@ int zmq::router_t::xrecv(msg_t *msg_)
     while (rc == 0 && msg_->is_routing_id())
         rc = _fq.recvpipe(msg_, &pipe);
 
-    if (rc != 0)
+    // 可能读取到空消息，rc == 0（req 或者 router 会发送一个空消息给 router）
+
+    if (rc != 0)    // 没有完成 attach_pipe 的操作，所以读取不到消息
         return -1;
 
     zmq_assert(pipe != NULL);
@@ -366,18 +379,21 @@ int zmq::router_t::xrecv(msg_t *msg_)
     }
     else
     {
+        // ROUTER 接收到消息时，会在顶部添加一个信封，标记消息的来源
+        // 也就是说，如果 req 发送了三帧消息，但是用户需要从 router 读取四次才可以（第一次是 router 添加的信封）
+
         //  We are at the beginning of a message.
         //  Keep the message part we have in the prefetch buffer
         //  and return the ID of the peer instead.
-        rc = _prefetched_msg.move(*msg_);
+        rc = _prefetched_msg.move(*msg_);       // 保存接收到的消息，然后将 UUID 返回给用户，标记消息来源（第二次调用 recv 才返回这次接收到的消息）
         errno_assert(rc == 0);
         _prefetched = true;
-        _current_in = pipe;
+        _current_in = pipe;     // 接收到对端发送过来的空消息，会用来寻找 pipe，然后用该 pipe 接收剩下的真实的用户消息
 
-        const blob_t &routing_id = pipe->get_routing_id();
+        const blob_t &routing_id = pipe->get_routing_id();      // pipe 的 UUID 已经在 xattach_pipe 保存下来了
         rc = msg_->init_size(routing_id.size());
         errno_assert(rc == 0);
-        memcpy(msg_->data(), routing_id.data(), routing_id.size());
+        memcpy(msg_->data(), routing_id.data(), routing_id.size());     // 将 routing_id 作为消息返回给用户
         msg_->set_flags(msg_t::more);
         if (_prefetched_msg.metadata())
             msg_->set_metadata(_prefetched_msg.metadata());
@@ -506,15 +522,17 @@ bool zmq::router_t::identify_peer(pipe_t *pipe_, bool locally_initiated_)
 
         if (msg.size() == 0)
         {
+            // 如果对端发送过来的空消息中没有套接字标识(routing_id), 则 router 会自动生成一个 UUID 来标识消息的来源
             //  Fall back on the auto-generation
             unsigned char buf[5];
             buf[0] = 0;
-            put_uint32(buf + 1, _next_integral_routing_id++);
-            routing_id.set(buf, sizeof buf);
+            put_uint32(buf + 1, _next_integral_routing_id++);       // 自动生成 UUID 标识消息来源
+            routing_id.set(buf, sizeof buf);        // 设置 routing_id, 长度为 5 字节
             msg.close();
         }
         else
         {
+            // 对端发送空消息中含有 routing_id，用该 routing_id 来标识消息来源
             routing_id.set(static_cast<unsigned char *>(msg.data()), msg.size());
             msg.close();
 
@@ -522,7 +540,7 @@ bool zmq::router_t::identify_peer(pipe_t *pipe_, bool locally_initiated_)
             //  connection to take the routing id.
             const out_pipe_t *const existing_outpipe = lookup_out_pipe(routing_id);
 
-            if (existing_outpipe)
+            if (existing_outpipe)       // 如果这个 routing_id 已经存在，则会覆盖（如果允许覆盖才会覆盖）
             {
                 if (!_handover)
                     //  Ignore peers with duplicate ID
@@ -551,7 +569,7 @@ bool zmq::router_t::identify_peer(pipe_t *pipe_, bool locally_initiated_)
     }
 
     pipe_->set_router_socket_routing_id(routing_id);
-    add_out_pipe(ZMQ_MOVE(routing_id), pipe_);
+    add_out_pipe(ZMQ_MOVE(routing_id), pipe_); // 设置 pipe 和 routing_id 的映射关系（发送的时候会通过 routing_id 查找对应的 pipe，并发送消息）
 
     return true;
 }

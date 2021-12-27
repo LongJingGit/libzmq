@@ -323,7 +323,7 @@ int zmq::options_t::setsockopt(int option_, const void *optval_, size_t optvalle
     case ZMQ_AFFINITY:
         return do_setsockopt(optval_, optvallen_, &affinity);
 
-    case ZMQ_ROUTING_ID:
+    case ZMQ_ROUTING_ID:        // 设置套接字标识
         //  Routing id is any binary string from 1 to 255 octets
         if (optvallen_ > 0 && optvallen_ <= UCHAR_MAX)
         {

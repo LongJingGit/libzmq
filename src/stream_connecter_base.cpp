@@ -169,6 +169,7 @@ void zmq::stream_connecter_base_t::in_event ()
     out_event ();
 }
 
+// 调用到这里，说明连接已经完全建立了，触发了 conn_fd 的 EPOLLOUT 事件，在 out_event() 中调用到了这里
 void zmq::stream_connecter_base_t::create_engine (fd_t fd_, const std::string &local_address_)
 {
     const endpoint_uri_pair_t endpoint_pair (local_address_, _endpoint,

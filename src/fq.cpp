@@ -101,11 +101,12 @@ int zmq::fq_t::recvpipe(msg_t *msg_, pipe_t **pipe_)
         //  Note that when message is not fetched, current pipe is deactivated
         //  and replaced by another active pipe. Thus we don't have to increase
         //  the 'current' pointer.
+        // fair queue (读取完当前 pipe 消息的最后一帧，才会读取第二个 pipe 的消息，即使第一个 pipe 仍然有消息，但是不会继续读取 第一个 pipe 的消息)
         if (fetched)
         {
             if (pipe_)
                 *pipe_ = _pipes[_current];
-            _more = (msg_->flags() & msg_t::more) != 0;
+            _more = (msg_->flags() & msg_t::more) != 0;     // 判断是否是多帧消息的最后一帧
             if (!_more)
             {
                 _last_in = _pipes[_current];

@@ -183,7 +183,7 @@ void zmq::dist_t::distribute(msg_t *msg_)
     {
         for (pipes_t::size_type i = 0; i < _matching;)
         {
-            if (!write(_pipes[i], msg_))
+            if (!write(_pipes[i], msg_)) // 可能有多个订阅者，这里依次发送给每一个订阅者
             {
                 //  Use same index again because entry will have been removed.
             }

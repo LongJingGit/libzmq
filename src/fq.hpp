@@ -59,7 +59,7 @@ class fq_t
   private:
     //  Inbound pipes.
     typedef array_t<pipe_t, 1> pipes_t;
-    pipes_t _pipes;
+    pipes_t _pipes;     // socket 向 session 写入数据的管道
 
     //  Number of active pipes. All the active pipes are located at the
     //  beginning of the pipes array.

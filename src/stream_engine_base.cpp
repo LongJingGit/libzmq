@@ -340,7 +340,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
         _insize -= processed;
         if (rc == 0 || rc == -1)
             break;
-        rc = (this->*_process_msg)(_decoder->msg()); // 将从内核读取到的数据push给session(push_raw_msg_to_session)
+        rc = (this->*_process_msg)(_decoder->msg()); // 将从内核读取到的数据 push 给 session(push_raw_msg_to_session)
         if (rc == -1)
             break;
     }
@@ -398,11 +398,16 @@ void zmq::stream_engine_base_t::out_event()
         }
 
         _outpos = NULL;
-        _outsize = _encoder->encode(&_outpos, 0);
+        _outsize = _encoder->encode(&_outpos, 0); // 这里将 _outpos 指向了一块分配好的内存，该内存块默认大小为 8192
 
+        /**
+         * while 循环在做的事情：
+         * 1. 从 socket 和 session 通信的队列中读取消息（socket 可能发送了多帧消息，这多帧消息存放在不同的内存，每次 pull 的时候拿到的是每一帧消息的指针）
+         * 2. 拿到每一帧存放在不同内存区域的消息的指针，将其拷贝到连续的一块内存区域 _outpos 中
+         */
         while (_outsize < static_cast<size_t>(_options.out_batch_size))
         {
-            if ((this->*_next_msg)(&_tx_msg) == -1)         // pull_msg_from_session
+            if ((this->*_next_msg)(&_tx_msg) == -1)         // pull msg from session（不同的 engine ，该函数指针不同）
             {
                 //  ws_engine can cause an engine error and delete it, so
                 //  bail out immediately to avoid use-after-free
@@ -423,7 +428,7 @@ void zmq::stream_engine_base_t::out_event()
         //  If there is no data to send, stop polling for output.
         if (_outsize == 0)
         {
-            _output_stopped = true; // 没有数据可以发送，所以也不需要监听 EPOLLOUT 事件
+            _output_stopped = true; // 没有数据可以发送，不需要监听 EPOLLOUT 事件，但是何时开始重新监听 EPOLLOUT 事件的？？？ ---> restart_output
             reset_pollout();
             return;
         }
@@ -434,14 +439,14 @@ void zmq::stream_engine_base_t::out_event()
     //  arbitrarily large. However, we assume that underlying TCP layer has
     //  limited transmission buffer and thus the actual number of bytes
     //  written should be reasonably modest.
-    const int nbytes = write(_outpos, _outsize);        // engine 将数据写给 内核
+    const int nbytes = write(_outpos, _outsize);        // engine 将数据写给 内核（_outpos 是一块连续的内存区域，包含要发送的消息，可能是多帧）
 
     //  IO error has occurred. We stop waiting for output events.
     //  The engine is not terminated until we detect input error;
     //  this is necessary to prevent losing incoming messages.
     if (nbytes == -1)
     {
-        reset_pollout();
+        reset_pollout();            // IO 发生错误，停止监听 EPOLLOUT 事件
         return;
     }
 
@@ -452,14 +457,23 @@ void zmq::stream_engine_base_t::out_event()
     //  to send, stop polling for output.
     if (unlikely(_handshaking))
         if (_outsize == 0)
-            reset_pollout();    // 数据发送完毕之后，不再监听 EPOLLOUT 事件
+            reset_pollout();    // 只有当仍在 handshanke 并且没有数据发送的时候，才不会继续监听 EPOLLOUT 事件
 }
 
+/**
+ * 重新监听 EPOLLOUT 事件。
+ *
+ * 上一次 EPOLLOUT 事件触发之后，session 会从和 socket 通信的管道中读取 socket 写入的数据并交给 engine 将数据发送给内核，
+ * 数据发送完毕之后，会从内核的监听队列中清除 EPOLLOUT 事件。
+ *
+ * 当 socket 重新向管道中写入了数据（如果是多帧的话，需要写入最后一帧才算完全写入），会 flush 消息，该 flush 动作实际上是给 session 发送
+ * 消息，session 可以从管道中读取数据并交给 engine 写入给内核，并重新监听 EPOLLOUT 事件
+ */
 void zmq::stream_engine_base_t::restart_output()
 {
     if (unlikely(_io_error))
         return;
-
+    // 重新监听 EPOLLOUT 事件，并尝试重新发送数据（数据发送完毕之后，会将 _output_stopped 置为 true，并且停止监听 EPOLLOUT 事件）
     if (likely(_output_stopped))
     {
         set_pollout();

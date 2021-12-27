@@ -38,6 +38,7 @@
 #include "ypipe.hpp"
 #include "ypipe_conflate.hpp"
 
+// parents 保存的是 socket 和 sessoin
 int zmq::pipepair(object_t *parents_[2], pipe_t *pipes_[2], const int hwms_[2], const bool conflate_[2])
 {
     //   Creates two pipe objects. These objects are connected by two ypipes,
@@ -203,7 +204,7 @@ bool zmq::pipe_t::read(msg_t *msg_)
 
     while (true)
     {
-        if (!_in_pipe->read(msg_))
+        if (!_in_pipe->read(msg_))          // 一次 read 只能读取到一帧消息，对于 socket 发送了多帧消息的，这里需要 read 多次
         {
             _in_active = false;
             return false;
@@ -282,6 +283,11 @@ void zmq::pipe_t::rollback() const
     }
 }
 
+/**
+ * 当消息发送完毕之后，就会 flush 该消息。flush 会尝试两种操作：
+ * 1. 直接通过 out_pipe flush 消息，如果成功，直接返回；
+ * 2. 如果 1 失败，则会给 session 发送信号，session 接收到信号之后从和 socket 通信的管道中读取数据，并交给 engine 发送出去
+ */
 void zmq::pipe_t::flush()
 {
     //  The peer does not exist anymore at this point.

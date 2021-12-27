@@ -442,7 +442,7 @@ int zmq::socket_base_t::setsockopt(int option_, const void *optval_, size_t optv
     //  If the socket type doesn't support the option, pass it to
     //  the generic option parser.
     rc = options.setsockopt(option_, optval_, optvallen_);
-    update_pipe_options(option_);
+    update_pipe_options(option_);       // 更新 option 参数（比如 HWM）
 
     return rc;
 }
@@ -910,6 +910,7 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
         return 0;
     }
 
+    // 这些类型的 socket 只能一对一连接，不能 1-->N 或者 N-->N
     const bool is_single_connect = (options.type == ZMQ_DEALER || options.type == ZMQ_SUB || options.type == ZMQ_PUB || options.type == ZMQ_REQ);
     if (unlikely(is_single_connect))
     {
@@ -1093,6 +1094,7 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
 #endif
 
     //  Create session. 对于 client 端，创建 session 的时候会将 _active 初始化为 true
+    // 如果 connect 多次（连接到不同的 endpoint），则会创建多个不同的 session，对应着同一个 socket
     session_base_t *session = session_base_t::create(io_thread, true, this, options, paddr);
     errno_assert(session);
 
@@ -1110,6 +1112,8 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
 #endif
     pipe_t *newpipe = NULL;
 
+    // 如果 socket 设置了 ZMQ_IMMEDIATE 或者使用的是 UDP 协议，不会在这里创建 pipe 并 attach pipe
+    // 会在 tcp 连接建立之后，才创建的 engine 和 pipe 并发送命令给 socket 绑定 pipe
     if (options.immediate != 1 || subscribe_to_all)
     {
         //  Create a bi-directional pipe.
@@ -1126,6 +1130,7 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
 
         //  Attach local end of the pipe to the socket object.
         // 将 pipe[0] 绑定到本端 socket（不管 connect 是否成功，这里都可以直接使用 zmq_send 发送消息了）
+        // zmq_send 发送消息是指 socket 将消息发送给 session，并不是 engine 将消息发送给内核。所以无需关注网络层连接是否建立
         attach_pipe(new_pipes[0], subscribe_to_all, true);
         newpipe = new_pipes[0];
 
@@ -1291,7 +1296,7 @@ int zmq::socket_base_t::send(msg_t *msg_, int flags_)
     msg_->reset_metadata();
 
     //  Try to send the message using method in each socket class
-    rc = xsend(msg_);
+    rc = xsend(msg_);       // 发送消息，如果有socket 设置了 HWM，则触发 HWM 之后会设置错误码 EAGAIN，并返回 -1
     if (rc == 0)
     {
         return 0;
@@ -1336,7 +1341,7 @@ int zmq::socket_base_t::send(msg_t *msg_, int flags_)
         {
             return -1;
         }
-        rc = xsend(msg_);
+        rc = xsend(msg_);           // 如果上一次 xsend 的时候触发了 EAGAIN，会在这里重新尝试发送消息(前提是没有设置 ZMQ_DONTWAIT 标志位)
         if (rc == 0)
             break;
         if (unlikely(errno != EAGAIN))
@@ -1418,7 +1423,7 @@ int zmq::socket_base_t::recv(msg_t *msg_, int flags_)
         }
         _ticks = 0;
 
-        rc = xrecv(msg_);
+        rc = xrecv(msg_);           // 第一次尝试读取消息（但是由于没有绑定 pipe，所以这里读取不到消息）
         if (rc < 0)
         {
             return rc;
@@ -1444,7 +1449,7 @@ int zmq::socket_base_t::recv(msg_t *msg_, int flags_)
      */
     while (true)
     {
-        // 处理从其他模块发送给 socket 的命令（比如需要处理 session 发送给 socket 的 bind pipe 的命令）
+        // 处理从其他模块发送给 socket 的命令（比如需要处理 session 发送给 socket 的 bind pipe 的命令。如果是订阅类型 socket，可能会更新订阅消息列表）
         if (unlikely(process_commands(block ? timeout : 0, false) != 0))
         {
             return -1;

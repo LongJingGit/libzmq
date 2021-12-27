@@ -160,7 +160,7 @@ public:
         //  There was at least one value prefetched.
         //  Return it to the caller.
         *value_ = _queue.front(); // 从队列头部取消息
-        _queue.pop();
+        _queue.pop();       // 删除队列头部消息
         return true;
     }
 

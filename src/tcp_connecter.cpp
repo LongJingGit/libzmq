@@ -156,7 +156,7 @@ void zmq::tcp_connecter_t::start_connecting()
     {
         // 这里需要补充的是：如果马上建立了 tcp 连接，则 server 端的 conn_fd 的 EPOLLOUT 立刻会被触发(对端马上就可以发送数据)
         _handle = add_fd(_s);       // 注册 conn_fd 描述符给 epoll(此时还没有注册 conn_fd 的 EPOLLIN 和 EPOLLOUT 事件)
-        out_event();        // 尝试直接从 conn_fd 读取数据，并不需要等待 epoll 返回
+        out_event();        // 连接建立，触发 EPOLLOUT 事件，则直接尝试写入数据流程
     }
 
     //  Connection establishment may be delayed. Poll for its completion.
@@ -175,7 +175,7 @@ void zmq::tcp_connecter_t::start_connecting()
     else
     {
         if (_s != retired_fd)
-            close();
+            close();        // 需要关闭 socket，重新创建新的 socket 去尝试重新连接
         add_reconnect_timer();
     }
 }

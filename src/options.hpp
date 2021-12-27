@@ -107,7 +107,7 @@ struct options_t
     int8_t type;
 
     //  Linger time, in milliseconds.
-    atomic_value_t linger;
+    atomic_value_t linger;          // 延迟时间，以毫秒为单位
 
     //  Maximum interval in milliseconds beyond which userspace will
     //  timeout connect().

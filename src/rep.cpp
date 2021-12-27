@@ -78,6 +78,7 @@ int zmq::rep_t::xrecv(msg_t *msg_)
     //  to the reply pipe.
     if (_request_begins)
     {
+        // 在这里不断的读取带有 UUID 的消息和空消息，并且将这些消息直接通过 _current_out 发送给对端(可能是 req 或者 router)
         while (true)
         {
             int rc = router_t::xrecv(msg_);
@@ -90,7 +91,7 @@ int zmq::rep_t::xrecv(msg_t *msg_)
                 const bool bottom = (msg_->size() == 0);
 
                 //  Push it to the reply pipe.
-                rc = router_t::xsend(msg_);
+                rc = router_t::xsend(msg_);         // 将带有 UUID 的消息和空消息直接发送出去
                 errno_assert(rc == 0);
 
                 if (bottom)
@@ -108,7 +109,7 @@ int zmq::rep_t::xrecv(msg_t *msg_)
     }
 
     //  Get next message part to return to the user.
-    const int rc = router_t::xrecv(msg_);
+    const int rc = router_t::xrecv(msg_);       // 这里会读取真正的用户消息
     if (rc != 0)
         return rc;
 

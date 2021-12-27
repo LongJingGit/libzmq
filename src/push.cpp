@@ -44,6 +44,13 @@ zmq::push_t::~push_t ()
 {
 }
 
+/**
+ * 如果设置了 ZMQ_IMMEDIATE 标志，会在 zmq_connnect 的时候就会创建 pipe 并同时 attach pipe;
+ * 如果没有设置该标志，则会在连接建立完成之后 engine_ready 中创建 pipe，并发送命令给 socket，socket 在调用 recv 接收消息的时候首先处理 bind 命令，然后 attach pipe。
+ *
+ * PUSH 使用负载均衡的方式向每一个连接的 socket 均衡发送消息的。如果设置了 ZMQ_IMMEDIATE，则如果连接到无效的 socket 的时候，发送给该 socket 的消息就会被丢弃；
+ * 但是，如果没有设置该标志，则 attach pipe 只会 attach 有效的 socket 的 pipe，从 socket 发送的消息，则所有消息都会发送给连接成功的有效 socket。不会出现消息丢失的情况。
+ */
 void zmq::push_t::xattach_pipe (pipe_t *pipe_,
                                 bool subscribe_to_all_,
                                 bool locally_initiated_)

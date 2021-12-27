@@ -50,6 +50,7 @@ zmq::req_t::req_t(class ctx_t *parent_, uint32_t tid_, int sid_)
 
 zmq::req_t::~req_t() {}
 
+// req 在发送消息时会在消息顶部插入一个空帧，接收时会将空帧移去
 int zmq::req_t::xsend(msg_t *msg_)
 {
     //  If we've sent a request and we still haven't got the reply,
@@ -91,14 +92,16 @@ int zmq::req_t::xsend(msg_t *msg_)
         msg_t bottom;
         int rc = bottom.init();
         errno_assert(rc == 0);
+        // 注意，发送消息的第一帧是 req 内部构造出来的 bottom，大小为 0，并且设置了 msg_t::more（表示后面还有消息：用户需要发送的消息）
+        // 这一帧空消息是为了请求 routing_id ，为了让对端确认接收的 pipe 的。（具体实现可参考 router.cpp）
         bottom.set_flags(msg_t::more);
-
+        // 发送第一帧消息，并获取 _reply_pipe（注意：虽然 _reply_pipe == nullptr，但是 &_reply_pipe != nullptr）
         rc = dealer_t::sendpipe(&bottom, &_reply_pipe);
         if (rc != 0)
             return -1;
         zmq_assert(_reply_pipe);
 
-        _message_begins = false;
+        _message_begins = false;            // 后面发送的时候就不会执行到本 if 条件判断内
 
         // Eat all currently available messages before the request is fully
         // sent. This is done to avoid:
@@ -119,14 +122,14 @@ int zmq::req_t::xsend(msg_t *msg_)
 
     bool more = (msg_->flags() & msg_t::more) != 0;
 
-    int rc = dealer_t::xsend(msg_);
+    int rc = dealer_t::xsend(msg_);     // 在这里才发送真实的用户消息
     if (rc != 0)
         return rc;
 
     //  If the request was fully sent, flip the FSM into reply-receiving state.
     if (!more)
     {
-        _receiving_reply = true; // 如果没有设置 ZMQ_SNDMORE，则在收到响应之前不允许发送第二条请求
+        _receiving_reply = true; // 数据发送完毕，正在等待接收回报。如果没有设置 ZMQ_SNDMORE，则在收到响应之前不允许发送第二条请求
         _message_begins = true;
     }
 
@@ -261,7 +264,7 @@ int zmq::req_t::recv_reply_pipe(msg_t *msg_)
     while (true)
     {
         pipe_t *pipe = NULL;
-        const int rc = dealer_t::recvpipe(msg_, &pipe);
+        const int rc = dealer_t::recvpipe(msg_, &pipe);     // 收到的大小为 0 的消息，是第一帧用来寻找路由的消息 bottom
         if (rc != 0)
             return rc;
         if (!_reply_pipe || pipe == _reply_pipe)
@@ -272,7 +275,8 @@ int zmq::req_t::recv_reply_pipe(msg_t *msg_)
 zmq::req_session_t::req_session_t(io_thread_t *io_thread_, bool connect_, socket_base_t *socket_, const options_t &options_, address_t *addr_)
     : session_base_t(io_thread_, connect_, socket_, options_, addr_)
     , _state(bottom)
-{}
+{
+}
 
 zmq::req_session_t::~req_session_t() {}
 
