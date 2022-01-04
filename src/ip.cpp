@@ -880,18 +880,18 @@ int zmq::create_ipc_wildcard_address(std::string &path_, std::string &file_)
     // If TMPDIR, TEMPDIR, or TMP are available and are directories, create
     // the socket directory there.
     const char **tmp_env = tmp_env_vars;
-    while (tmp_path.empty() && *tmp_env != 0)
+    while (tmp_path.empty () && *tmp_env != 0)
     {
-        const char *const tmpdir = getenv(*tmp_env);
+        const char *const tmpdir = getenv (*tmp_env);
         struct stat statbuf;
 
         // Confirm it is actually a directory before trying to use
-        if (tmpdir != 0 && ::stat(tmpdir, &statbuf) == 0 && S_ISDIR(statbuf.st_mode))
+        if (tmpdir != 0 && ::stat (tmpdir, &statbuf) == 0 && S_ISDIR (statbuf.st_mode))
         {
-            tmp_path.assign(tmpdir);
-            if (*(tmp_path.rbegin()) != '/')
+            tmp_path.assign (tmpdir);
+            if (*(tmp_path.rbegin ()) != '/')
             {
-                tmp_path.push_back('/');
+                tmp_path.push_back ('/');
             }
         }
 
@@ -913,7 +913,11 @@ int zmq::create_ipc_wildcard_address(std::string &path_, std::string &file_)
     // each socket is created in a directory created by mkdtemp(), and
     // mkdtemp() guarantees a unique directory name, there will be no
     // collision.
+<<<<<<< HEAD
     if (mkdtemp(&buffer[0]) == 0)
+=======
+    if (mkdtemp (&buffer[0]) == 0)  // 创建一个临时的目录
+>>>>>>> other# add annotation
     {
         return -1;
     }

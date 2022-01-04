@@ -109,6 +109,8 @@ int zmq::ipc_listener_t::set_local_address(const char *addr_)
     //  Allow wildcard file
     if (options.use_fd == -1 && addr[0] == '*')
     {
+        // _tmp_socket_dirname: 随机的临时目录
+        // addr: 临时的且唯一的文件名
         if (create_ipc_wildcard_address(_tmp_socket_dirname, addr) < 0)
         {
             return -1;
@@ -122,7 +124,7 @@ int zmq::ipc_listener_t::set_local_address(const char *addr_)
     //  cleaning up the file after the service is stopped.
     if (options.use_fd == -1)
     {
-        ::unlink(addr.c_str());
+        ::unlink(addr.c_str());     // 先尝试删除 addr 的文件, 防止 bind 失败
     }
     _filename.clear();
 
@@ -166,6 +168,7 @@ int zmq::ipc_listener_t::set_local_address(const char *addr_)
         }
 
         //  Bind the socket to the file path.
+        // addr 是在 create_ipc_wildcard_address 中创建的临时且唯一的文件名，bind 调用则会创建名为 addr 的文件（如果该文件已经存在，则 bind 会失败）
         rc = bind(_s, const_cast<sockaddr *>(address.addr()), address.addrlen());
         if (rc != 0)
             goto error;
