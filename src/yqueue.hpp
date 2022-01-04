@@ -115,9 +115,10 @@ public:
         _back_chunk = _end_chunk;
         _back_pos = _end_pos;
 
-        if (++_end_pos != N)
+        if (++_end_pos != N)        // 说明队列中还有空间
             return;
 
+        // 队列已满，需要重用已经释放的 chunk 或者申请新的 chunk，并添加在队列的尾部
         chunk_t *sc = _spare_chunk.xchg(NULL);
         if (sc)
         {
@@ -187,6 +188,11 @@ public:
 
 private:
     //  Individual memory chunk to hold N elements.
+    /**
+     * 一个 chunk 可以保存 N 个 T；
+     * 一个无锁队列可以有多个 chunk；
+     * 多个 chunk 之间用 prev 和 next 连成双向链表；
+     */
     struct chunk_t
     {
         T values[N];
@@ -220,7 +226,7 @@ private:
     //  People are likely to produce and consume at similar rates.  In
     //  this scenario holding onto the most recently freed chunk saves
     //  us from having to call malloc/free.
-    atomic_ptr_t<chunk_t> _spare_chunk;
+    atomic_ptr_t<chunk_t> _spare_chunk;     // 保留最近释放的 chunk，可以重用，不用调用 malloc/free
 
     ZMQ_NON_COPYABLE_NOR_MOVABLE(yqueue_t)
 };

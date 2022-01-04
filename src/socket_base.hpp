@@ -260,7 +260,7 @@ private:
     std::string resolve_tcp_addr(std::string endpoint_uri_, const char *tcp_address_);
 
     //  Socket's mailbox object.
-    i_mailbox *_mailbox;
+    i_mailbox *_mailbox;        // socket 的 mailbox，用于 socket 之间或者其他模块向 socket 发送命令进行通信
 
     //  List of attached pipes.
     typedef array_t<pipe_t, 3> pipes_t;

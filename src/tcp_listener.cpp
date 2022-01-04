@@ -75,8 +75,8 @@ void zmq::tcp_listener_t::in_event()
         return;
     }
 
-    int rc = tune_tcp_socket(fd);
-    rc = rc | tune_tcp_keepalives(fd, options.tcp_keepalive, options.tcp_keepalive_cnt, options.tcp_keepalive_idle, options.tcp_keepalive_intvl);
+    int rc = tune_tcp_socket(fd);       // 禁用 Nagle’s Algorithm 算法
+    rc = rc | tune_tcp_keepalives(fd, options.tcp_keepalive, options.tcp_keepalive_cnt, options.tcp_keepalive_idle, options.tcp_keepalive_intvl);   // 设置 keepalive
     rc = rc | tune_tcp_maxrt(fd, options.tcp_maxrt);
     if (rc != 0)
     {
@@ -119,7 +119,14 @@ int zmq::tcp_listener_t::create_socket(const char *addr_)
     rc = setsockopt(_s, SOL_SOCKET, SO_REUSEADDR, (char *)&flag, sizeof(int));
     errno_assert(rc == 0);
 #else
-    rc = setsockopt(_s, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(int));
+    /**
+     * 一般来说，一个端口被释放后两分钟才能使用(TIME_WAIT) 但是 SO_REUSEADDR 选项可以让端口被释放后可以立即被使用
+     *
+     * SO_REUSEADDR 这个选项是用来通知内核，如果端口忙，且TCP连接状态处于TIME_WAIT，可以重用端口。如果端口忙，但是TCP端口处于其他状态，重用端口依然会得到一个错误信息（地址已近在使用中...）
+     *
+     * 如果你的服务程序停止后想立即重启，而新套接字依旧使用同一端口，此时SO_REUSEADDR 选项非常有用。必须意识到，此时任何非期望数据到达，都可能导致服务程序反应混乱，不过这只是一种可能，事实上很不可能。所以，重启后的服务程序有可能收到非期望数据。必须慎重使用 SO_REUSEADDR 选项。
+     */
+    rc = setsockopt(_s, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(int)); // 设置端口重用
     errno_assert(rc == 0);
 #endif
 
@@ -127,7 +134,7 @@ int zmq::tcp_listener_t::create_socket(const char *addr_)
 #if defined ZMQ_HAVE_VXWORKS
     rc = bind(_s, (sockaddr *)_address.addr(), _address.addrlen());
 #else
-    rc = bind(_s, _address.addr(), _address.addrlen());
+    rc = ::bind(_s, _address.addr(), _address.addrlen());
 #endif
 #ifdef ZMQ_HAVE_WINDOWS
     if (rc == SOCKET_ERROR)
@@ -141,7 +148,7 @@ int zmq::tcp_listener_t::create_socket(const char *addr_)
 #endif
 
     //  Listen for incoming connections.
-    rc = listen(_s, options.backlog);
+    rc = listen(_s, options.backlog);       // 阻塞 socket 对 listen 没有作用，listen 调用会立即返回，只有 accept 会阻塞
 #ifdef ZMQ_HAVE_WINDOWS
     if (rc == SOCKET_ERROR)
     {

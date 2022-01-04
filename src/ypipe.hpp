@@ -74,10 +74,11 @@ public:
     void write(const T &value_, bool incomplete_)
     {
         //  Place the value to the queue, add new terminator element.
-        _queue.back() = value_; // 将消息指针存放到队列尾部
+        _queue.back() = value_; // 注意：这里存放的不是指向消息的指针，而是真实的消息本身(back 返回值的是引用，所以可以直接修改back的值)
         _queue.push();
 
         //  Move the "flush up to here" poiter.
+        // 置 flush 指针，标明 flush 的位置
         if (!incomplete_)
             _f = &_queue.back(); // 只有发送完最后一帧消息，才会置 _f，对端的 check_read 才可以返回 true，对端此时才可以从队列头部读取数据
     }
@@ -107,7 +108,7 @@ public:
             return true;
 
         //  Try to set 'c' to 'f'.
-        if (_c.cas(_w, _f) != _w)
+        if (_c.cas(_w, _f) != _w) // CAS 操作：如果 _c 和 _w 相等，则会将 _c 替换为 _f 的值，返回替换之前的值；否则将 _w 更新为 _c
         {
             //  Compare-and-swap was unseccessful because 'c' is NULL.
             //  This means that the reader is asleep. Therefore we don't
@@ -159,8 +160,8 @@ public:
 
         //  There was at least one value prefetched.
         //  Return it to the caller.
-        *value_ = _queue.front(); // 从队列头部取消息
-        _queue.pop();       // 删除队列头部消息
+        *value_ = _queue.front(); // 从队列头部取消息（这里会执行一次构造函数吗？拷贝构造？移动构造？）
+        _queue.pop();             // 移动 begin_pos, 如果一个 chunk 的消息全部读取完毕，则队列会释放掉该 chunk 的内存空间
         return true;
     }
 

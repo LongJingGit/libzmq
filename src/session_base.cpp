@@ -349,7 +349,7 @@ zmq::socket_base_t *zmq::session_base_t::get_socket() const
 void zmq::session_base_t::process_plug()
 {
     if (_active)
-        start_connecting(false);
+        start_connecting(false);        // 只有 client 端才会执行到这里
 }
 
 //  This functions can return 0 on success or -1 and errno=ECONNREFUSED if ZAP

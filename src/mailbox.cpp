@@ -56,16 +56,18 @@ zmq::fd_t zmq::mailbox_t::get_fd () const
     return _signaler.get_fd ();
 }
 
+/**
+ * mailbox 之间通过 signaler 进行通信
+ * signaler 可以视为一个 eventfd：send 是向 eventfd 写入一个字符；recv 是从 eventfd 读取一个字符。通过这种方式可以达到两个线程通信的目的
+ */
 void zmq::mailbox_t::send (const command_t &cmd_)
 {
     _sync.lock ();
-    // 将命令写入到无锁队列中
-    _cpipe.write (cmd_, false);
-    const bool ok = _cpipe.flush ();
+    _cpipe.write (cmd_, false);     // 将命令写入到无锁队列中
+    const bool ok = _cpipe.flush ();    // 手动刷新无锁队列缓存
     _sync.unlock ();
-    // 激活被监听的 IO 线程的 mailbox 的句柄
     if (!ok)
-        _signaler.send ();
+        _signaler.send ();      // 向 signaler 写入一个字符，作为通知消息
 }
 
 int zmq::mailbox_t::recv (command_t *cmd_, int timeout_)

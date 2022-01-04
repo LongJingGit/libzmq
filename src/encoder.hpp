@@ -73,14 +73,15 @@ template <typename T> class encoder_base_t : public i_encoder
     //  points to NULL) decoder object will provide buffer of its own.
     size_t encode (unsigned char **data_, size_t size_) ZMQ_FINAL
     {
-        unsigned char *buffer = !*data_ ? _buf : *data_;
+        unsigned char *buffer = !*data_ ? _buf : *data_;         // _buf 在构造函数中分配了内存
         const size_t buffersize = !*data_ ? _buf_size : size_;
 
         if (in_progress () == NULL)
             return 0;
 
         size_t pos = 0;
-        while (pos < buffersize) {
+        while (pos < buffersize)
+        {
             //  If there are no more data to return, run the state machine.
             //  If there are still no data, return what we already have
             //  in the buffer.
@@ -166,8 +167,8 @@ template <typename T> class encoder_base_t : public i_encoder
     bool _new_msg_flag;
 
     //  The buffer for encoded data.
-    const size_t _buf_size;
-    unsigned char *const _buf;
+    const size_t _buf_size;             // 由 option 中的参数指定。默认 8192
+    unsigned char *const _buf;          // 构造函数中分配内存
 
     msg_t *_in_progress;
 

@@ -89,8 +89,9 @@ void zmq::tcp_connecter_t::process_term(int linger_)
 // EPOLLOUT 事件触发：并不一定是 socket 可写数据，也有可能是 socket 发生了错误（比如连接拒绝或者无可用内存，这也会被内核标记为可写）
 /**
  * EPOLLOUT 事件触发的两种条件：
- * 1. 连接建立
- * 2. socket 可写(缓冲区从不可写变为可写或者socket发生错误)
+ * 1. 连接建立：可以直接向对应 socket 写入数据
+ * 2. socket 可写(缓冲区从不可写变为可写或者 socket 发生错误)
+ *    2.1 如果是 socket 发生了错误（比如连接被拒绝），则需要尝试重新连接：关闭原有的 conn_fd，并将其从 epoll 中删除；创建新的 conn_fd 并加入 epoll
  */
 void zmq::tcp_connecter_t::out_event()
 {
@@ -105,6 +106,7 @@ void zmq::tcp_connecter_t::out_event()
 
     // 从内核监听队列中删除 conn_fd，后面 engine 中会重新将 conn_fd 加入内核监听队列，并设置 handle.
     // 这么做的目的是在 connect() 中会判断是否是 socket 发生了错误才触发的 out_event()。如果 socket 发生了错误，则不需要再次从内核监听队列删除 fd；如果没有发生错误，会在 engine 中重新将该 fd 加入到内核监听队列。这样就可以和 server 端重用 engine 的代码。
+    // 重新尝试连接需要创建新的 socket，所以这里需要删除旧的 socket
     rm_handle();
 
     /**
@@ -113,6 +115,12 @@ void zmq::tcp_connecter_t::out_event()
      * 如果 socket 发生错误，则会返回 retired_fd
      */
     const fd_t fd = connect();
+
+    /**
+     * 执行过 rm_handler() 和 connect() 之后：
+     * 1. 如果是连接建立成功触发的 out_event()，则会从 epoll 中删除 conn_fd，然后将 conn_fd 拷贝一份传递给engine(用来实例化engine)，然后将 conn_fd 标记为 retired_fd，并在 engine 建立好之后再将 conn_fd 重新加入到 epoll 中（只有 engine 建立好之后才可以通过 conn_fd 和内核交换数据）
+     * 2. 如果是连接建立失败，socket 发生错误触发的 out_event()，则会从 epoll 中删除原有的 conn_fd，并创建新的 conn_fd 尝试重新连接。连接成功之后执行(1)
+     */
 
     if (fd == retired_fd && ((options.reconnect_stop & ZMQ_RECONNECT_STOP_CONN_REFUSED) && errno == ECONNREFUSED))
     {
@@ -148,15 +156,15 @@ void zmq::tcp_connecter_t::timer_event(int id_)
 
 void zmq::tcp_connecter_t::start_connecting()
 {
-    //  Open the connecting socket.(创建非阻塞 socket 并 connect)
+    //  Open the connecting socket.(创建非阻塞 socket 并 connect，此时已经在 IO 线程中)
     const int rc = open();
 
     //  Connect may succeed in synchronous manner.
     if (rc == 0)
     {
         // 这里需要补充的是：如果马上建立了 tcp 连接，则 server 端的 conn_fd 的 EPOLLOUT 立刻会被触发(对端马上就可以发送数据)
-        _handle = add_fd(_s);       // 注册 conn_fd 描述符给 epoll(此时还没有注册 conn_fd 的 EPOLLIN 和 EPOLLOUT 事件)
-        out_event();        // 连接建立，触发 EPOLLOUT 事件，则直接尝试写入数据流程
+        _handle = add_fd(_s); // 注册 conn_fd 描述符给 epoll(此时还没有注册 conn_fd 的 EPOLLIN 和 EPOLLOUT 事件)
+        out_event(); // 连接建立，直接写入数据（不用监听 EPOLLOUT 直接发送数据，如果返回的是 EAGAIN，再将 EPOLLOUT 事件加入监听，等待 EPOLLOUT 事件触发之后，再去发送数据，待数据发送完毕，从内核监听队列中删除 EPOLLOUT 事件）
     }
 
     //  Connection establishment may be delayed. Poll for its completion.
@@ -303,7 +311,7 @@ zmq::fd_t zmq::tcp_connecter_t::connect()
     //  implementations and Solaris.
     if (rc == -1)
         err = errno;
-    if (err != 0)
+    if (err != 0)       // 表示有错误发生（比如连接被拒绝），可以尝试重新发起连接
     {
         errno = err;
 #    if !defined(TARGET_OS_IPHONE) || !TARGET_OS_IPHONE
@@ -317,8 +325,8 @@ zmq::fd_t zmq::tcp_connecter_t::connect()
 
     //  Return the newly connected socket.
     const fd_t result = _s;
-    _s = retired_fd;
-    return result;          // 注意：返回的是之前的 conn_fd，该 fd 会被用来初始化 engine 和 session
+    _s = retired_fd;        // 原来的 socketfd 已经被从 epoll 中删除
+    return result;          // 注意：返回的是之前的 conn_fd，该 fd 会被用来初始化 engine 和 session，并且会被重新加入到 epoll 中
 }
 
 bool zmq::tcp_connecter_t::tune_socket(const fd_t fd_)

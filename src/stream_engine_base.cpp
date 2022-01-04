@@ -194,7 +194,7 @@ void zmq::stream_engine_base_t::plug(io_thread_t *io_thread_, session_base_t *se
     //  Connect to I/O threads poller object.
     io_object_t::plug(io_thread_);
 
-    // 将连接 socket 加入到 poller 的内核监听队列中(在具体的 engine 中会设置 in_event 和 out_event)
+    // 将 conn_fd 加入到 poller 的内核监听队列中(在派生类 engine 中会设置 in_event 和 out_event)
     _handle = add_fd(_s);
     _io_error = false;
 
@@ -340,7 +340,8 @@ bool zmq::stream_engine_base_t::in_event_internal()
         _insize -= processed;
         if (rc == 0 || rc == -1)
             break;
-        rc = (this->*_process_msg)(_decoder->msg()); // 将从内核读取到的数据 push 给 session(push_raw_msg_to_session)
+        // 如果是 zmtp_engine，_process_msg 最开始指向 process_routing_id_msg. 这是因为对端 socket 的 engine 会发送过来一条 routing_id 消息
+        rc = (this->*_process_msg)(_decoder->msg()); // 将从内核读取到的数据 push 给 session(push_msg_to_session)
         if (rc == -1)
             break;
     }
@@ -359,7 +360,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
         reset_pollin(_handle);
     }
 
-    _session->flush();
+    _session->flush();      // 刷新数据
     return true;
 }
 
@@ -407,7 +408,9 @@ void zmq::stream_engine_base_t::out_event()
          */
         while (_outsize < static_cast<size_t>(_options.out_batch_size))
         {
-            if ((this->*_next_msg)(&_tx_msg) == -1)         // pull msg from session（不同的 engine ，该函数指针不同）
+            // pull msg from session（不同的 engine ，该函数指针不同. 如果是 zmtp_engine，连接刚建立时该函数指针指向 routing_id_msg）
+            // 注意：连接刚建立的时候，如果是 zmtp_engine，则会由engine构造一条routing_id消息发送给对方，由对方生成UUID标识路由
+            if ((this->*_next_msg)(&_tx_msg) == -1)
             {
                 //  ws_engine can cause an engine error and delete it, so
                 //  bail out immediately to avoid use-after-free
@@ -446,7 +449,7 @@ void zmq::stream_engine_base_t::out_event()
     //  this is necessary to prevent losing incoming messages.
     if (nbytes == -1)
     {
-        reset_pollout();            // IO 发生错误，停止监听 EPOLLOUT 事件
+        reset_pollout(); // IO 发生错误（socket 错误或者发送缓冲区已写满），停止监听 EPOLLOUT 事件（下次发送缓冲区可写的时候可以重新监听 EPOLLOUT 事件）
         return;
     }
 
@@ -484,7 +487,7 @@ void zmq::stream_engine_base_t::restart_output()
     //  was sent by the user the socket is probably available for writing.
     //  Thus we try to write the data to socket avoiding polling for POLLOUT.
     //  Consequently, the latency should be better in request/reply scenarios.
-    out_event();
+    out_event();    // 直接写，不用等 EPOLLOUT 触发
 }
 
 bool zmq::stream_engine_base_t::restart_input()

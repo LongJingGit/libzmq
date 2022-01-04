@@ -108,7 +108,7 @@ zmq::fd_t zmq::open_socket (int domain_, int type_, int protocol_)
     const fd_t s = WSASocket (domain_, type_, protocol_, NULL, 0,
                               WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT);
 #else
-    const fd_t s = socket (domain_, type_, protocol_);
+    const fd_t s = ::socket (domain_, type_, protocol_);
 #endif
     if (s == retired_fd) {
 #ifdef ZMQ_HAVE_WINDOWS
@@ -809,7 +809,7 @@ void zmq::make_socket_noninheritable (fd_t sock_)
     //  If there 's no SOCK_CLOEXEC, let's try the second best option.
     //  Race condition can cause socket not to be closed (if fork happens
     //  between accept and this point).
-    const int rc = fcntl (sock_, F_SETFD, FD_CLOEXEC);
+    const int rc = fcntl (sock_, F_SETFD, FD_CLOEXEC);      // close on exec（在调用 exec 相关函数时该文件描述符会被关闭）
     errno_assert (rc != -1);
 #else
     LIBZMQ_UNUSED (sock_);

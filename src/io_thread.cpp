@@ -46,9 +46,14 @@ zmq::io_thread_t::io_thread_t(ctx_t *ctx_, uint32_t tid_)
     if (_mailbox.get_fd() != retired_fd)
     {
         // 将 IO 线程的 mailbox 的句柄加入到 poller 的内核监听队列中。主线程向 IO 线程发送命令，会触发 IO 线程的可读事件 in_event()
-        // add_fd 的返回值是 poll_entry_t *
-        _mailbox_handle = _poller->add_fd(_mailbox.get_fd(), this);
-        _poller->set_pollin(_mailbox_handle);
+        /**
+         * add_fd 的参数说明:
+         * 1. 第一个参数是要监听的文件描述符 fd。表面上这里是 mailbox_fd，实际上是 mailbox 内部的 eventfd. poller 监听的也是该 eventfd。socket 线程向 listen/session 发送命令的实质是向该 eventfd 写入一个字符，然后触发 eventfd 的 EPOLLIN 事件，IO 线程从 epoll::loop 开始执行 EPOLLIN 的事件处理流程
+         *
+         * 2. 第二个参数是该文件描述符所属的对象。当 fd 的事件触发之后，epoll 会通过该参数找到需要执行回调函数的对象.
+         */
+        _mailbox_handle = _poller->add_fd(_mailbox.get_fd(), this); // 这一步只是将 fd 加入到内核监听队列，并没有设置该 fd 的监听事件
+        _poller->set_pollin(_mailbox_handle);       // 在这里才设置 fd 的监听事件: EPOLLIN
     }
 }
 

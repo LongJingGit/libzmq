@@ -180,7 +180,7 @@ void zmq::signaler_t::send ()
 #endif
 #if defined ZMQ_HAVE_EVENTFD
     const uint64_t inc = 1;
-    ssize_t sz = write (_w, &inc, sizeof (inc));
+    ssize_t sz = write (_w, &inc, sizeof (inc));        // 向 _w 写入一个字符，作为通知消息
     errno_assert (sz == sizeof (inc));
 #elif defined ZMQ_HAVE_WINDOWS
     const char dummy = 0;
@@ -242,7 +242,7 @@ int zmq::signaler_t::wait (int timeout_) const
 #ifdef ZMQ_POLL_BASED_ON_POLL
     struct pollfd pfd;
     pfd.fd = _r;
-    pfd.events = POLLIN;
+    pfd.events = POLLIN;        // 只监听可读事件（因为 eventfd 是一直可写的，所以监听写事件没有意义）
     const int rc = poll (&pfd, 1, timeout_);
     if (unlikely (rc < 0)) {
         errno_assert (errno == EINTR);
@@ -304,12 +304,13 @@ void zmq::signaler_t::recv ()
 //  Attempt to read a signal.
 #if defined ZMQ_HAVE_EVENTFD
     uint64_t dummy;
-    ssize_t sz = read (_r, &dummy, sizeof (dummy));
+    ssize_t sz = read (_r, &dummy, sizeof (dummy));     // dummy 读取到的是累计计数值（如果 send(1) 3 次，则累积计数为3，读取到的dummy也为3）
     errno_assert (sz == sizeof (dummy));
 
     //  If we accidentally grabbed the next signal(s) along with the current
     //  one, return it back to the eventfd object.
-    if (unlikely (dummy > 1)) {
+    if (unlikely (dummy > 1))   // 一次只能读取一个信号，如果读取到多个，则将其他的重新写入到 eventfd
+    {
         const uint64_t inc = dummy - 1;
         ssize_t sz2 = write (_w, &inc, sizeof (inc));
         errno_assert (sz2 == sizeof (inc));

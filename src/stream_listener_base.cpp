@@ -93,6 +93,7 @@ int zmq::stream_listener_base_t::close()
     return 0;
 }
 
+// fd: 连接 socket
 void zmq::stream_listener_base_t::create_engine(fd_t fd_)
 {
     const endpoint_uri_pair_t endpoint_pair(get_socket_name(fd_, socket_end_local), get_socket_name(fd_, socket_end_remote), endpoint_type_bind);
@@ -116,7 +117,7 @@ void zmq::stream_listener_base_t::create_engine(fd_t fd_)
     zmq_assert(io_thread);
 
     //  Create and launch a session object.
-    // _active 被置为 false
+    // 服务端的 _active 被置为 false
     session_base_t *session = session_base_t::create(io_thread, false, _socket, options, NULL);
     errno_assert(session);
     session->inc_seqnum();

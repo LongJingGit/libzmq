@@ -70,7 +70,7 @@ class signaler_t
     //  Underlying write & read file descriptor
     //  Will be -1 if an error occurred during initialization, e.g. we
     //  exceeded the number of available handles
-    fd_t _w;
+    fd_t _w;        // 其实是 eventfd。通过向该 eventfd 读写数据达到通信的目的（该 eventfd 是 mailbox 的底层实现，poller 监听的也是这个 fd）
     fd_t _r;
 
 #ifdef HAVE_FORK

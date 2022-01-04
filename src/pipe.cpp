@@ -261,7 +261,7 @@ bool zmq::pipe_t::write(const msg_t *msg_)
 
     const bool more = (msg_->flags() & msg_t::more) != 0;
     const bool is_routing_id = msg_->is_routing_id();
-    _out_pipe->write(*msg_, more);
+    _out_pipe->write(*msg_, more);      // 这里：这里是向 out_pipe 写入消息体，不再是消息指针
     if (!more && !is_routing_id)
         _msgs_written++;
 
@@ -285,7 +285,7 @@ void zmq::pipe_t::rollback() const
 
 /**
  * 当消息发送完毕之后，就会 flush 该消息。flush 会尝试两种操作：
- * 1. 直接通过 out_pipe flush 消息，如果成功，直接返回；
+ * 1. 直接通过 out_pipe flush 消息，如果成功，直接返回；如果失败，说明 reader 在睡眠，需要唤醒：执行2
  * 2. 如果 1 失败，则会给 session 发送信号，session 接收到信号之后从和 socket 通信的管道中读取数据，并交给 engine 发送出去
  */
 void zmq::pipe_t::flush()

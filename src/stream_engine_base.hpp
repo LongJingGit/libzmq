@@ -204,7 +204,7 @@ private:
     void mechanism_ready();
 
     //  Underlying socket.
-    fd_t _s;            // 连接 socket，engine 通过该 socket 与内核交换数据
+    fd_t _s;            // 连接 socket，engine 通过该 socket 与内核交换数据（创建 engine 的时候初始化的）
 
     handle_t _handle;
 

@@ -53,6 +53,7 @@ zmq::object_t::~object_t ()
 {
 }
 
+// 发送命令的时候会获取对象的 tid
 uint32_t zmq::object_t::get_tid () const
 {
     return _tid;

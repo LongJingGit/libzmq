@@ -549,7 +549,7 @@ zmq::socket_base_t *zmq::ctx_t::create_socket(int type_)
 
     /**
      * 将每个 socket 的 mailbox_t 保存到 全局变量 context 中.
-     * socket 之间命令的发送和接收都是通过该 mailbox 来的，并不会经过 IO 线程
+     * socket 之间命令的发送和接收都是通过该 mailbox 来的，并不会经过 IO 线程，所以 socket 的 mailbox_fd 不需要通过 poller 监听
      */
     _slots[slot] = s->get_mailbox();
 

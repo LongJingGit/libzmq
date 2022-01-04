@@ -77,15 +77,14 @@ void zmq::mailbox_safe_t::clear_signalers()
 void zmq::mailbox_safe_t::send(const command_t &cmd_)
 {
     _sync->lock();
-    _cpipe.write(cmd_, false);
-    const bool ok = _cpipe.flush();
+    _cpipe.write(cmd_, false);      // 将命令写入到管道
+    const bool ok = _cpipe.flush(); // 手动刷新缓存
 
     if (!ok)
     {
         _cond_var.broadcast();
 
-        // 发送信号，通知 IO 线程的 mailbox
-        // IO 线程的 mailbox 的句柄已经在创建 IO 线程的时候被 poller 监听了，所以这里通知之后，poller 就可以监听到事件，从而触发 in_event()
+        // 发送信号给另一个线程，另一个线程可以从 _cpipe 中读取命令并执行（比如 socket 在 recv 之前先尝试处理 pending 的命令：即从管道读取命令）
         for (std::vector<signaler_t *>::iterator it = _signalers.begin(), end = _signalers.end(); it != end; ++it)
         {
             (*it)->send();
@@ -98,7 +97,7 @@ void zmq::mailbox_safe_t::send(const command_t &cmd_)
 int zmq::mailbox_safe_t::recv(command_t *cmd_, int timeout_)
 {
     //  Try to get the command straight away.
-    if (_cpipe.read(cmd_))
+    if (_cpipe.read(cmd_))      // 先尝试直接读取命令
         return 0;
 
     //  If the timeout is zero, it will be quicker to release the lock, giving other a chance to send a command
@@ -111,7 +110,7 @@ int zmq::mailbox_safe_t::recv(command_t *cmd_, int timeout_)
     else
     {
         //  Wait for signal from the command sender.
-        const int rc = _cond_var.wait(_sync, timeout_);
+        const int rc = _cond_var.wait(_sync, timeout_);     // 等待对端其他线程发送信号激活
         if (rc == -1)
         {
             errno_assert(errno == EAGAIN || errno == EINTR);
@@ -120,7 +119,7 @@ int zmq::mailbox_safe_t::recv(command_t *cmd_, int timeout_)
     }
 
     //  Another thread may already fetch the command
-    const bool ok = _cpipe.read(cmd_);
+    const bool ok = _cpipe.read(cmd_);      // 读取其他线程写入的命令并执行
 
     if (!ok)
     {

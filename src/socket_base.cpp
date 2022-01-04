@@ -540,7 +540,7 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
     }
 
     //  Process pending commands, if any.
-    int rc = process_commands(0, false);
+    int rc = process_commands(0, false); // 其他线程发送给 socket 线程的命令，不会由EPOLL监听，更不会走IO线程的 epoll::loop 的处理流程，消息一直会被放在队列里面，需要 socket 线程主动去读取并处理命令
     if (unlikely(rc != 0))
     {
         return -1;
@@ -654,6 +654,7 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
 
     if (protocol == protocol_name::tcp)
     {
+        // 注意：创建 listener 的时候，将 io_thread 对象传递给了 listener。内部实际将 io_thread 的 tid 赋值给了 listener 的对象，所以后面发送命令的时候如果获取 listener 的 tid 的时候实际上获取的是 io_thread 的 tid。也就是说，发送给 listener 的命令实际上是发送给 io_thread 的
         tcp_listener_t *listener = new (std::nothrow) tcp_listener_t(io_thread, this, options);
         alloc_assert(listener);
         // set_local_address() 中会调用 ::socket 创建可用于 TCP 通讯的 socket，然后执行 bind/listen 等一系列系统级操作。
@@ -670,6 +671,7 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
 
         // 在这里会 send command 给 IO 线程，将 listener 绑定到 IO 线程。IO 线程会将 listener 含有的句柄加入到 Poller 中，以侦听读写事件。
         // 系统级 服务端接收连接 accept 是在 zmq::tcp_listener_t::in_event 中完成的
+        // send command 从表面上看是发送给 listener 的，但是实际上 listener 的 tid 和 io_thread 的 tid 是同一个，并且 epoll 监听了 io_thread 的 tid，所以发送给 listener 的命令，会触发 io_thread 的 tid 的 EPOLLIN 事件，最终由 io_thread 来处理该命令
         add_endpoint(make_unconnected_bind_endpoint_pair(_last_endpoint), static_cast<own_t *>(listener), NULL);
         options.connected = true;
         return 0;
@@ -910,7 +912,7 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
         return 0;
     }
 
-    // 这些类型的 socket 只能一对一连接，不能 1-->N 或者 N-->N
+    // 这些类型的 socket 如果做客户端，只能一对一连接，不能 1-->N 或者 N-->N（同一个 socket 不能多次连接同一个 endpoint ？？？）
     const bool is_single_connect = (options.type == ZMQ_DEALER || options.type == ZMQ_SUB || options.type == ZMQ_PUB || options.type == ZMQ_REQ);
     if (unlikely(is_single_connect))
     {
@@ -1094,7 +1096,7 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
 #endif
 
     //  Create session. 对于 client 端，创建 session 的时候会将 _active 初始化为 true
-    // 如果 connect 多次（连接到不同的 endpoint），则会创建多个不同的 session，对应着同一个 socket
+    // 如果 connect 多次（连接到不同的 endpoint），则会创建多个不同的 session
     session_base_t *session = session_base_t::create(io_thread, true, this, options, paddr);
     errno_assert(session);
 
@@ -1571,10 +1573,10 @@ int zmq::socket_base_t::process_commands(int timeout_, bool throttle_)
 
     //  Check whether there are any commands pending for this thread.
     command_t cmd;
-    int rc = _mailbox->recv(&cmd, timeout_);
+    int rc = _mailbox->recv(&cmd, timeout_);        // 返回值为 0，说明读取到了命令
 
     //  Process all available commands.
-    while (rc == 0)
+    while (rc == 0) // 循环读取所有的 pending 命令并执行
     {
         cmd.destination->process_command(cmd);
         rc = _mailbox->recv(&cmd, 0);

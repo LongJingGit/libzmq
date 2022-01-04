@@ -70,6 +70,7 @@ zmq::zmtp_engine_t::zmtp_engine_t(fd_t fd_, const options_t &options_, const end
     , _subscription_required(false)
     , _heartbeat_timeout(0)
 {
+    // 如果创建的 zmtp_engine，则在连接成功之后会发送 routing_id_msg。这是 engine 的处理逻辑，和 socket 无关(具体实现参考 _next_msg/_process_msg)
     _next_msg = static_cast<int (stream_engine_base_t::*)(msg_t *)>(&zmtp_engine_t::routing_id_msg);
     _process_msg = static_cast<int (stream_engine_base_t::*)(msg_t *)>(&zmtp_engine_t::process_routing_id_msg);
 
@@ -440,16 +441,20 @@ bool zmq::zmtp_engine_t::handshake_v3_1()
     return zmq::zmtp_engine_t::handshake_v3_x(false);
 }
 
+// 连接刚建立的时候，会由 engine 构造一条 routing_id 消息发送给对端socket，由对端socket使用该 routing_id 标记本端 socket，达到路由目的
+// 发送 routing_id_msg 是在 handshake() 之后的
 int zmq::zmtp_engine_t::routing_id_msg(msg_t *msg_)
 {
     const int rc = msg_->init_size(_options.routing_id_size);
     errno_assert(rc == 0);
+    // socket 可以使用 zmq_setsockopt 设置 routing_id，如果没有设置，则会发送一条空消息，对端收到之后会生成一个 UUID 来标记本端socket
     if (_options.routing_id_size > 0)
         memcpy(msg_->data(), _options.routing_id, _options.routing_id_size);
-    _next_msg = &zmtp_engine_t::pull_msg_from_session;
+    _next_msg = &zmtp_engine_t::pull_msg_from_session;      // 改变函数指针，进行正常的数据交互
     return 0;
 }
 
+// 如果是 zmtp 协议，则在连接刚建立时，对端socket会发送过来一条 routing_id 的消息，接收到该消息，并为对方建立 UUID（这就是 “信封”）
 int zmq::zmtp_engine_t::process_routing_id_msg(msg_t *msg_)
 {
     if (_options.recv_routing_id)
@@ -479,7 +484,7 @@ int zmq::zmtp_engine_t::process_routing_id_msg(msg_t *msg_)
         errno_assert(rc == 0);
     }
 
-    _process_msg = &zmtp_engine_t::push_msg_to_session;
+    _process_msg = &zmtp_engine_t::push_msg_to_session;     // 改变函数指针，进行正常的数据交互
 
     return 0;
 }

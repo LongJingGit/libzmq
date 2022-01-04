@@ -60,7 +60,7 @@ int zmq::tune_tcp_socket(fd_t s_)
     //  so using Nagle wouldn't improve throughput in anyway, but it would
     //  hurt latency.
     int nodelay = 1;
-    const int rc = setsockopt(s_, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char *>(&nodelay), sizeof(int));
+    const int rc = setsockopt(s_, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<char *>(&nodelay), sizeof(int)); // 禁用 Nagle’s Algorithm 算法
     assert_success_or_recoverable(s_, rc);
     if (rc != 0)
         return rc;

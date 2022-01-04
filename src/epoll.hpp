@@ -96,7 +96,7 @@ class epoll_t ZMQ_FINAL : public worker_poller_base_t
     {
         fd_t fd;
         epoll_event ev;
-        zmq::i_poll_events *events;             // 继承于 i_poll_events 的派生类的对象指针
+        zmq::i_poll_events *events; // 当前 epoll 所属对象的指针，比如 io_thread 调用 add_fd 的时候传入的就是 this 指针。当监听事件触发之后，会通过该参数寻找需要执行回调函数的对象
     };
 
     //  List of retired event sources.
