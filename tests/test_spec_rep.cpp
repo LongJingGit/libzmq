@@ -36,17 +36,29 @@ SETUP_TEARDOWN_TESTCONTEXT
 
 char connect_address[MAX_SOCKET_STRING];
 
+/**
+ * @brief 数据流模型：
+ *
+ *          rep(server)       ---->        req(client)
+ *
+ * 1. 作为服务端的 rep，在客户端 req 完全连接上来之后，rep 才会创建 pipe 并且执行 socket attach pipe 的指令
+ * 2. 作为客户端的 req，在调用 zmq_connect 的时候就会执行 attach pipe。
+ *
+ * req 和 rep 的连接完全建立之后，req 会发送一帧空消息给 rep，由 rep 生成 UUID 标识消息来源
+ *
+ * 需要注意的是：req 发送命令，rep 接收命令。（rep 在接收到命令之前不会主动发送命令）
+ */
 void test_fair_queue_in (const char *bind_address_)
 {
     void *rep = test_context_socket (ZMQ_REP);
     TEST_ASSERT_SUCCESS_ERRNO (zmq_bind (rep, bind_address_));
     size_t len = MAX_SOCKET_STRING;
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_getsockopt (rep, ZMQ_LAST_ENDPOINT, connect_address, &len));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_getsockopt (rep, ZMQ_LAST_ENDPOINT, connect_address, &len));
 
-    const size_t services = 5;
+    const size_t services = 1;
     void *reqs[services];
-    for (size_t peer = 0; peer < services; ++peer) {
+    for (size_t peer = 0; peer < services; ++peer)
+    {
         reqs[peer] = test_context_socket (ZMQ_REQ);
 
         TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (reqs[peer], connect_address));
@@ -54,7 +66,7 @@ void test_fair_queue_in (const char *bind_address_)
 
     msleep (SETTLE_TIME);
 
-    s_send_seq (reqs[0], "A", SEQ_END);
+    s_send_seq (reqs[0], "A", SEQ_END); // 消息发送肯定是由 req 开始的（不管 req 是客户端还是服务端），并且实际上这里发送了两帧消息（包含一帧空消息）
     s_recv_seq (rep, "A", SEQ_END);
     s_send_seq (rep, "A", SEQ_END);
     s_recv_seq (reqs[0], "A", SEQ_END);
@@ -151,7 +163,7 @@ int main ()
 
     // SHALL receive incoming messages from its peers using a fair-queuing
     // strategy.
-    RUN_TEST (test_fair_queue_in_inproc);
+    // RUN_TEST (test_fair_queue_in_inproc);
     RUN_TEST (test_fair_queue_in_tcp);
 
     // For an incoming message:
@@ -160,7 +172,7 @@ int main ()
     // SHALL wait for a single reply message from its calling application.
     // SHALL prepend the address envelope and delimiter.
     // SHALL deliver this message back to the originating peer.
-    RUN_TEST (test_envelope_inproc);
+    // RUN_TEST (test_envelope_inproc);
     RUN_TEST (test_envelope_tcp);
 
     return UNITY_END ();
