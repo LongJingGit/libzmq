@@ -857,7 +857,7 @@ void zmq::assert_success_or_recoverable(zmq::fd_t s_, int rc_)
 #ifdef ZMQ_HAVE_IPC
 int zmq::create_ipc_wildcard_address(std::string &path_, std::string &file_)
 {
-#    if defined ZMQ_HAVE_WINDOWS
+#if defined ZMQ_HAVE_WINDOWS
     char buffer[MAX_PATH];
 
     {
@@ -874,7 +874,7 @@ int zmq::create_ipc_wildcard_address(std::string &path_, std::string &file_)
 
     path_.assign(buffer);
     file_ = path_ + "/socket";
-#    else
+#else
     std::string tmp_path;
 
     // If TMPDIR, TEMPDIR, or TMP are available and are directories, create
@@ -906,25 +906,21 @@ int zmq::create_ipc_wildcard_address(std::string &path_, std::string &file_)
     std::vector<char> buffer(tmp_path.length() + 1);
     memcpy(&buffer[0], tmp_path.c_str(), tmp_path.length() + 1);
 
-#        if defined HAVE_MKDTEMP
+#if defined HAVE_MKDTEMP
     // Create the directory.  POSIX requires that mkdtemp() creates the
     // directory with 0700 permissions, meaning the only possible race
     // with socket creation could be the same user.  However, since
     // each socket is created in a directory created by mkdtemp(), and
     // mkdtemp() guarantees a unique directory name, there will be no
     // collision.
-<<<<<<< HEAD
-    if (mkdtemp(&buffer[0]) == 0)
-=======
     if (mkdtemp (&buffer[0]) == 0)  // 创建一个临时的目录
->>>>>>> other# add annotation
     {
         return -1;
     }
 
     path_.assign(&buffer[0]);
     file_ = path_ + "/socket";
-#        else
+#else
     LIBZMQ_UNUSED(path_);
     /**
      * mkstemp: 在系统中以唯一的文件名创建文件并打开，而且只有当前用户才可以对这个文件进行读写操作(文件名的最后六个字符必须是 xxxxxx)
@@ -936,8 +932,8 @@ int zmq::create_ipc_wildcard_address(std::string &path_, std::string &file_)
     ::close(fd);
 
     file_.assign(&buffer[0]);
-#        endif
-#    endif
+#endif
+#endif
 
     return 0;
 }
