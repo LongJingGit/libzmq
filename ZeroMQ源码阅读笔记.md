@@ -26,19 +26,19 @@ ZeroMQ 几乎所有的 IO 操作都是异步的，每个 ZeroMQ IO 线程都有�
 
 基本流程图：
 
-![主线程](images/ZeroMq-基本流程图.png)
+![主线程](images/ZeroMQ-基本流程图.png)
 
 
 
 server 端主线程：
 
-![主线程](./images/ZeroMq-server_main.png)
+![主线程](./images/ZeroMQ-server_main.png)
 
 
 
 server 端 IO 线程：
 
-![主线程](./images/ZeroMq-server_io.png)
+![主线程](./images/ZeroMQ-server_io.png)
 
 ### 线程模型
 
