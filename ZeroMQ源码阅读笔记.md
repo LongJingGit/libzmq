@@ -20,13 +20,13 @@
 
 ZeroMQ 几乎所有的 IO 操作都是异步的，每个 ZeroMQ IO 线程都有与之绑定的 Poller，Poller 采用经典的 Reactor 模式实现，Poller 会根据不同的操作系统平台使用不同的网络 IO 模型(select、poll、epoll、devpoll、kequeue等)。在 ZeroMQ 中，zmq_socket 也被看成是一个 ZMQ IO 线程。每个线程内含一个信箱 mailbox，用于线程与线程间传递命令。在创建 ZMQ IO 线程时，会把信箱句柄加到 Poller 中，用于监听是否有命令到达。当 client 端开始发起连接或者 server 端开始监听时，会在主线程创建 zmq_connector 或者 zmq_listener，主线程使用 zmq_socket 的 mailbox 发送命令给 IO 线程，将其（zmq_connector 或者 zmq_listener）绑定到 IO 线程中，IO 线程接收到命令后，会把 zmq_connector 或者 zmq_listener 含有的句柄加入 Poller 中，以侦听读写事件。Client 端与 Server 端都是通过 Session 来管理连接和通信，一个 session 代表一次会话，每个 Session 都会关联到相应的读/写管道，主线程收发消息只是分别从管道中读/写数据。Session 并不实际跟 kernel 交换 IO 数据，而是通过 plugin 到 Session 中的 Engine 来与 kernel 交换 IO 数据。
 
-![类图](./images/整体架构.png)
+![类图](images/整体架构.png)
 
 ### 设计概述
 
 基本流程图：
 
-![主线程](./images/ZeroMq-基本流程图.png)
+![主线程](images/ZeroMq-基本流程图.png)
 
 
 
@@ -263,7 +263,7 @@ INPROC: pipe
 
 * [<摘录>开源软件架构-ZeroMQ](https://www.cnblogs.com/hummersofdie/p/4597031.html)
 * [业界消息总线技术分析-ZeroMQ-云社区-华为云 (huaweicloud.com)](https://bbs.huaweicloud.com/blogs/detail/104842)
-* [[ZeroMQ的内部架构(一) - 在思考的路上 - ITeye博客](https://www.iteye.com/blog/watter1985-1736023)]
+* [ZeroMQ的内部架构(一) - 在思考的路上 - ITeye博客](https://www.iteye.com/blog/watter1985-1736023)
 
 ## 使用
 
