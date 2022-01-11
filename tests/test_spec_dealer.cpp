@@ -44,7 +44,8 @@ void test_round_robin_out (const char *bind_address_)
 
     const size_t services = 5;
     void *rep[services];
-    for (size_t peer = 0; peer < services; ++peer) {
+    for (size_t peer = 0; peer < services; ++peer)
+    {
         rep[peer] = test_context_socket (ZMQ_REP);
 
         TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (rep[peer], connect_address));
@@ -54,6 +55,8 @@ void test_round_robin_out (const char *bind_address_)
     msleep (SETTLE_TIME);
 
     // Send all requests
+    // dealer 以负载均衡的方式将消息发送给连接的节点，所以每个端都会收到一个消息
+    // 注意这里的发送接口：第一帧不是 "ABC"，而是空消息（REP 要求消息中的信封以一个空帧结束，如果不使用 REQ 发送消息，需要自己在消息里面添加这个空帧）
     for (size_t i = 0; i < services; ++i)
         s_send_seq (dealer, 0, "ABC", SEQ_END);
 
@@ -62,7 +65,7 @@ void test_round_robin_out (const char *bind_address_)
     zmq_msg_init (&msg);
 
     for (size_t peer = 0; peer < services; ++peer)
-        s_recv_seq (rep[peer], "ABC", SEQ_END);
+        s_recv_seq (rep[peer], "ABC", SEQ_END);     // REP 要求接收到的消息的信封以一个空帧结束
 
     TEST_ASSERT_SUCCESS_ERRNO (zmq_msg_close (&msg));
 
@@ -84,7 +87,8 @@ void test_fair_queue_in (const char *bind_address_)
 
     const size_t services = 5;
     void *senders[services];
-    for (size_t peer = 0; peer < services; ++peer) {
+    for (size_t peer = 0; peer < services; ++peer)
+    {
         senders[peer] = test_context_socket (ZMQ_DEALER);
 
         TEST_ASSERT_SUCCESS_ERRNO (
@@ -94,11 +98,11 @@ void test_fair_queue_in (const char *bind_address_)
     zmq_msg_t msg;
     TEST_ASSERT_SUCCESS_ERRNO (zmq_msg_init (&msg));
 
-    s_send_seq (senders[0], "A", SEQ_END);
-    s_recv_seq (receiver, "A", SEQ_END);
+    // s_send_seq (senders[0], "A", SEQ_END);
+    // s_recv_seq (receiver, "A", SEQ_END);
 
-    s_send_seq (senders[0], "A", SEQ_END);
-    s_recv_seq (receiver, "A", SEQ_END);
+    // s_send_seq (senders[0], "A", SEQ_END);
+    // s_recv_seq (receiver, "A", SEQ_END);
 
     // send our requests
     for (size_t peer = 0; peer < services; ++peer)
@@ -196,17 +200,17 @@ TEST_CASES (tcp, "tcp://127.0.0.1:*")
 
 int main (void)
 {
-    setup_test_environment ();
+    setup_test_environment (6000);
 
     UNITY_BEGIN ();
 
-    RUN_TEST (test_round_robin_out_inproc);
-    RUN_TEST (test_fair_queue_in_inproc);
-    RUN_TEST (test_block_on_send_no_peers_inproc);
+    // RUN_TEST (test_round_robin_out_inproc);
+    // RUN_TEST (test_fair_queue_in_inproc);
+    // RUN_TEST (test_block_on_send_no_peers_inproc);
 
-    RUN_TEST (test_round_robin_out_tcp);
+    // RUN_TEST (test_round_robin_out_tcp);
     RUN_TEST (test_fair_queue_in_tcp);
-    RUN_TEST (test_block_on_send_no_peers_tcp);
+    // RUN_TEST (test_block_on_send_no_peers_tcp);
 
     // TODO *** Test disabled until libzmq does this properly ***
     // test_destroy_queue_on_disconnect (ctx);

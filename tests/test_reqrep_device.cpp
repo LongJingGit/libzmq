@@ -83,8 +83,7 @@ void test_roundtrip ()
     send_string_expect_success (req, "DEF", 0);       // 发送多帧消息时，只有当最后一条消息提交发送了，整个消息才会被发送
 
     /**
-     * 连接建立完成之后，从 router_t::xattach_pipe 中接收到 routing_id 的消息，router 收到该消息之后，会为对端 socket 创建一个 UUID。该 routing_id
-     * 的消息是由对端的 zmtp_engine 发送的.
+     * req 和 router 的连接建立完成之后，req 会在 zmtp_engine 中发送一条 routing_id 的 message。router 在 router_t::xattach_pipe 中接收该 routing_id 的消息。router 接收到该消息之后，会生成一个 UUID 标识对端 socket
      *
      * 如果对端 socket 没有设置套接字标识 routing_id，则会发送长度为 0 的空消息，由本端 socket 生成一个 UUID 来标识对端 socket;
      * 如果对端 socket 使用 zmq_setsockopt 设置了套接字标识 routing_id，则本端 socket 收到之后会用该 routing_id 来标记对方。

@@ -40,6 +40,7 @@ void test(const char *address)
     char my_endpoint[MAX_SOCKET_STRING];
 
     //  set router socket options
+    // 将 H 设置到了 options.hello_msg
     TEST_ASSERT_SUCCESS_ERRNO(zmq_setsockopt(router, ZMQ_HELLO_MSG, "H", 1));
 
     //  bind router
@@ -50,6 +51,8 @@ void test(const char *address)
     TEST_ASSERT_SUCCESS_ERRNO(zmq_connect(dealer, my_endpoint));
 
     // Receive the hello message
+    // 并没有经过网络读取数据，而是直接读取 options.hello_msg[0]。这和 router 通过 zmq_setsocketopt 将 H 设置到 options 吻合
+    // hello_msg_session_t::pull_msg()
     recv_string_expect_success(dealer, "H", 0);
 
     //  Clean up.

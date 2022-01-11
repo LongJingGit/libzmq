@@ -32,6 +32,7 @@
 
 SETUP_TEARDOWN_TESTCONTEXT
 
+#include <iostream>
 void test_probe_router_router ()
 {
     //  Create server and bind to endpoint
@@ -42,26 +43,32 @@ void test_probe_router_router ()
 
     //  Create client and connect to server, doing a probe
     void *client = test_context_socket (ZMQ_ROUTER);
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (client, ZMQ_ROUTING_ID, "X", 1));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (client, ZMQ_ROUTING_ID, "X", 1));    // 用 ZMQ_ROUTING_ID 设置套接字标识
     int probe = 1;
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_setsockopt (client, ZMQ_PROBE_ROUTER, &probe, sizeof (probe)));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (client, ZMQ_PROBE_ROUTER, &probe, sizeof (probe)));  // 给 socket 设置属性
+    // 给对端发送空消息，消息来源为 "X"（在 zmq_connect --> xattach_pipe 的时候发送）
     TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (client, my_endpoint));
 
     //  We expect a routing id=X + empty message from client
-    recv_string_expect_success (server, "X", 0);
+    recv_string_expect_success (server, "X", 0);    // 收到消息来源为 "X" 的空消息
     unsigned char buffer[255];
-    TEST_ASSERT_EQUAL_INT (
-      0, TEST_ASSERT_SUCCESS_ERRNO (zmq_recv (server, buffer, 255, 0)));
+    TEST_ASSERT_EQUAL_INT (0, TEST_ASSERT_SUCCESS_ERRNO (zmq_recv (server, buffer, 255, 0)));
 
     //  Send a message to client now
-    send_string_expect_success (server, "X", ZMQ_SNDMORE);
-    send_string_expect_success (server, "Hello", 0);
+    send_string_expect_success (server, "X", ZMQ_SNDMORE); // 寻找套接字表示为 "X" 的路由（实际上该消息不会被发送，只用来寻找路由）
+    send_string_expect_success (server, "Hello", 0);      // 向上一步寻找到的 "X" 的套接字发送消息
 
     // receive the routing ID, which is auto-generated in this case, since the
     // peer did not set one explicitly
-    TEST_ASSERT_EQUAL_INT (
-      5, TEST_ASSERT_SUCCESS_ERRNO (zmq_recv (client, buffer, 255, 0)));
+    /**
+     * @brief 接收长度为 5 的空消息(routing_id 是本端自动生成的)
+     *
+     * 问题：
+     * 1. 为什么该空消息长度为 5？
+     * 2. 该空消息是 server 端什么时候发送的？
+     * 3. 该空消息的接收为什么不能在 server 端 send 之前？
+     */
+    TEST_ASSERT_EQUAL_INT (5, TEST_ASSERT_SUCCESS_ERRNO (zmq_recv (client, buffer, 255, 0)));
 
     recv_string_expect_success (client, "Hello", 0);
 

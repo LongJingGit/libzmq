@@ -38,6 +38,12 @@
 
 SETUP_TEARDOWN_TESTCONTEXT
 
+/**
+ * 数据流模型：
+ *              ZMQ_XPUB        --->        ZMQ_SUB
+ */
+
+// 1000 1000
 int test_defaults (int send_hwm_, int msg_cnt_, const char *endpoint_)
 {
     char pub_endpoint[SOCKET_STRING_LEN];
@@ -50,21 +56,28 @@ int test_defaults (int send_hwm_, int msg_cnt_, const char *endpoint_)
     void *sub_socket = test_context_socket (ZMQ_SUB);
     TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (sub_socket, pub_endpoint));
 
+    /**
+     * 疑问：当 ZMQ_SUB 调用 zmq_connect 的时候，就会创建 pipe，并设置默认的 HWM。使用 zmq_setsockopt 设置的 hwm 是什么时候作用到 pipe 的？
+     *
+     * 当调用 zmq_setsockopt，会将新的 hwm 设置到 options 中，并调用 set_hwms 和 send_hwms_to_peer 设置给 pipe
+     */
+
     //set a hwm on publisher
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_setsockopt (pub_socket, ZMQ_SNDHWM, &send_hwm_, sizeof (send_hwm_)));
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_setsockopt (sub_socket, ZMQ_SUBSCRIBE, 0, 0));
+    // 给发布者设置 HWM，其实是给 session 和 socket 通信的 pipe 设置的（这会影响所有的订阅者）
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub_socket, ZMQ_SNDHWM, &send_hwm_, sizeof (send_hwm_)));
+
+    // 设置 SUB 的订阅消息内容（构造订阅消息并发送给 PUB）
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (sub_socket, ZMQ_SUBSCRIBE, 0, 0));
 
     // Wait before starting TX operations till 1 subscriber has subscribed
     // (in this test there's 1 subscriber only)
     const char subscription_to_all_topics[] = {1, 0};
-    recv_string_expect_success (pub_socket, subscription_to_all_topics, 0);
+    recv_string_expect_success (pub_socket, subscription_to_all_topics, 0);     // 接收 SUB 发送过来的订阅消息
 
     // Send until we reach "mute" state
     int send_count = 0;
     while (send_count < msg_cnt_
-           && zmq_send (pub_socket, "test message", 13, ZMQ_DONTWAIT) == 13)
+           && zmq_send (pub_socket, "test message", 13, ZMQ_DONTWAIT) == 13) // 如果设置了 ZMQ_DONTWAIT，则触发了 HWM 之后，会直接返回 -1
         ++send_count;
 
     TEST_ASSERT_EQUAL_INT (send_hwm_, send_count);
@@ -73,7 +86,8 @@ int test_defaults (int send_hwm_, int msg_cnt_, const char *endpoint_)
     // Now receive all sent messages
     int recv_count = 0;
     char dummybuff[64];
-    while (13 == zmq_recv (sub_socket, &dummybuff, 64, ZMQ_DONTWAIT)) {
+    while (13 == zmq_recv (sub_socket, &dummybuff, 64, ZMQ_DONTWAIT))
+    {
         ++recv_count;
     }
 
@@ -294,11 +308,11 @@ int main ()
     UNITY_BEGIN ();
 
     RUN_REGULAR_TEST_CASES (tcp);
-    RUN_REGULAR_TEST_CASES (inproc);
+    // RUN_REGULAR_TEST_CASES (inproc);
 
 #if !defined(ZMQ_HAVE_WINDOWS) && !defined(ZMQ_HAVE_GNU)
-    RUN_REGULAR_TEST_CASES (ipc);
+    // RUN_REGULAR_TEST_CASES (ipc);
 #endif
-    RUN_TEST (test_reset_hwm);
+    // RUN_TEST (test_reset_hwm);
     return UNITY_END ();
 }

@@ -1,6 +1,6 @@
 /*
     Copyright (c) 2007-2017 Contributors as noted in the AUTHORS file
-    
+
     This file is part of libzmq, the ZeroMQ core engine in C++.
 
     libzmq is free software; you can redistribute it and/or modify it under
@@ -30,8 +30,28 @@
 #include "testutil.hpp"
 #include "testutil_unity.hpp"
 
+
+/**
+ * 负载均衡 lb:
+ *                       PUSH(client)
+ *
+ *          PULL         PULL       PULL(server)
+ *
+ * 如果一个 PUSH 连接至多个 PULL，那么：PUSH 发送的消息会被均匀的分发到不同的 PULL，这种机制叫做负载均衡 lb
+ */
+
+/**
+ * 公平队列 fq:
+ *        PUSH        PUSH          PUSH(client)
+ *
+ *                    PULL(server)
+ *
+ * 如果有一个 PULL 连接至多个 PUSH，那么：PULL 会均匀的从 PUSH 处接收消息，这种机制称为公平队列 fq
+ */
+
 SETUP_TEARDOWN_TESTCONTEXT
 
+// 一个 PUSH 发送消息，多个 PULL 接收消息
 void test_immediate_1 ()
 {
     int val;
@@ -46,6 +66,11 @@ void test_immediate_1 ()
     // of the messages getting queued, as connect() creates a
     // pipe immediately.
 
+    /**
+     * 为什么需要先创建 pull 套接字，然后再创建 push 套接字呢？顺序反过来可以吗？
+     *
+     * 猜测：不可以。PULL 是接收消息的，PUSH 是发送消息的，所以为了保证 PULL 能够接收到所有消息，必须先于 PUSH 启动
+     */
     void *to = test_context_socket (ZMQ_PULL);
 
     // Bind the one valid receiver
@@ -60,9 +85,13 @@ void test_immediate_1 ()
     val = 0;
     TEST_ASSERT_SUCCESS_ERRNO (
       zmq_setsockopt (from, ZMQ_LINGER, &val, sizeof (val)));
+
+    /**
+     * push 连接至两个 server 端（push 向两个 server 端均匀的分发任务，这种机制称为负载均衡）
+     */
     // This pipe will not connect (provided the ephemeral port is not 5556)
     TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (from, "tcp://localhost:5556"));
-    // This pipe will
+    // This pipe will connect
     TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (from, my_endpoint));
 
     msleep (SETTLE_TIME);
@@ -91,7 +120,6 @@ void test_immediate_1 ()
     test_context_socket_close (from);
     test_context_socket_close (to);
 }
-
 
 void test_immediate_2 ()
 {
@@ -122,7 +150,7 @@ void test_immediate_2 ()
     // Set the key flag
     val = 1;
     TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_setsockopt (from, ZMQ_IMMEDIATE, &val, sizeof (val)));
+      zmq_setsockopt (from, ZMQ_IMMEDIATE, &val, sizeof (val)));    // 设置了 ZMQ_IMMEDIATE ，不会在 connect_interanl 的时候 attach_pipe
 
     // Connect to the invalid socket
     TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (from, "tcp://localhost:5561"));
