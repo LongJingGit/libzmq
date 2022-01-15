@@ -71,6 +71,7 @@ zmq::zmtp_engine_t::zmtp_engine_t(fd_t fd_, const options_t &options_, const end
     , _heartbeat_timeout(0)
 {
     // 如果创建的 zmtp_engine，则在连接成功之后会发送 routing_id_msg。这是 engine 的处理逻辑，和 socket 无关(具体实现参考 _next_msg/_process_msg)
+    // FIXME: 本模块中关于 routing_id message 消息的发送与接收流程待确定？？？
     _next_msg = static_cast<int (stream_engine_base_t::*)(msg_t *)>(&zmtp_engine_t::routing_id_msg);
     _process_msg = static_cast<int (stream_engine_base_t::*)(msg_t *)>(&zmtp_engine_t::process_routing_id_msg);
 

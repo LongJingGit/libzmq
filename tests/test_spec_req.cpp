@@ -56,13 +56,17 @@ void test_round_robin_out (const char *bind_address_)
         TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (rep[peer], connect_address));
     }
 
-    // rep 刚和 req 建立连接之后，就会发送一条空消息给 req，用于对方标识 UUID
-    // req 会在 zmq_send 或者 zmq_recv 之前 xattach_pipe，然后接收该消息，生成 UUID
+    /**
+     * req 和 rep 的连接刚建立，触发了双方的 EPOLLOUT 和 EPOLLIN 事件，双方会在 out_event() 和 in_event() 中构造一条 routing_id 消息，
+     * 发送给对端，由对端生成 UUID。
+     *
+     * 具体的代码可以参考 stream_engine_base_t::out_event() 和 stream_engine_base_t::in_event()
+     */
 
     //  We have to give the connects time to finish otherwise the requests
     //  will not properly round-robin. We could alternatively connect the
     //  REQ sockets to the REP sockets.
-    msleep (SETTLE_TIME);       // 在这里 req 会发送一条空消息给 rep，rep 收到该空消息之后，生成 UUID 标识 req
+    msleep (SETTLE_TIME);
 
     // s_send_seq (req, "ABC", SEQ_END);
     // s_recv_seq (rep[0], "ABC", SEQ_END);
@@ -138,8 +142,7 @@ void test_req_only_listens_to_current_peer (const char *bind_address_)
         // There still is a race condition when a stale peer's message
         // arrives at the REQ just after a request was sent to that peer.
         // To avoid that happening in the test, sleep for a bit.
-        TEST_ASSERT_EQUAL_INT (1,
-                               TEST_ASSERT_SUCCESS_ERRNO (zmq_poll (0, 0, 10)));
+        TEST_ASSERT_EQUAL_INT (1, TEST_ASSERT_SUCCESS_ERRNO (zmq_poll (0, 0, 10)));
 
         s_send_seq (req, "ABC", SEQ_END);
         // zmq_send(req, "ABC", strlen("ABC"), SEQ_END);

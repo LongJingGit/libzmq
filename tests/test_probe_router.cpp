@@ -109,7 +109,7 @@ void test_probe_router_dealer ()
 
 int main ()
 {
-    setup_test_environment ();
+    setup_test_environment (6000);
 
     UNITY_BEGIN ();
 

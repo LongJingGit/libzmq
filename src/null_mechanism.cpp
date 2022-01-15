@@ -118,7 +118,7 @@ int zmq::null_mechanism_t::next_handshake_command(msg_t *msg_)
         return -1;
     }
 
-    make_command_with_basic_properties(msg_, ready_command_name, ready_command_name_len);
+    make_command_with_basic_properties(msg_, ready_command_name, ready_command_name_len); // 构造 routing_id 消息
 
     _ready_command_sent = true;
 

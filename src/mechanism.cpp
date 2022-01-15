@@ -46,15 +46,14 @@ zmq::mechanism_t::~mechanism_t() {}
 
 void zmq::mechanism_t::set_peer_routing_id(const void *id_ptr_, size_t id_size_)
 {
-    // 设置对端的 routing_id 信息
-    _routing_id.set(static_cast<const unsigned char *>(id_ptr_), id_size_);
+    _routing_id.set(static_cast<const unsigned char *>(id_ptr_), id_size_);     // 保存 routing_id 消息
 }
 
 void zmq::mechanism_t::peer_routing_id(msg_t *msg_)
 {
     const int rc = msg_->init_size(_routing_id.size());
     errno_assert(rc == 0);
-    memcpy(msg_->data(), _routing_id.data(), _routing_id.size()); // 构造 routing_id message，稍后会由 session 递交给 socket
+    memcpy(msg_->data(), _routing_id.data(), _routing_id.size()); // 利用 set_peer_routing_id 中保存的 routing_id 消息，构造新的 routing_id 消息(后续会 push 给 session)
     msg_->set_flags(msg_t::routing_id);
 }
 
@@ -158,9 +157,9 @@ size_t zmq::mechanism_t::add_basic_properties(unsigned char *ptr_, size_t ptr_ca
     ptr += add_property(ptr, ptr_capacity_, ZMTP_PROPERTY_SOCKET_TYPE, socket_type, strlen(socket_type));
 
     //  Add identity (aka routing id) property
-    // 注意：这里只有 req/dealer/router 类型的 socket 才会发送 routing_id 的消息给对端
     if (options.type == ZMQ_REQ || options.type == ZMQ_DEALER || options.type == ZMQ_ROUTER)
     {
+        // 只有 req/dealer/router 类型的 socket 才会构造 routing_id 消息并发送给对端
         ptr += add_property(ptr, ptr_capacity_ - (ptr - ptr_), ZMTP_PROPERTY_IDENTITY, options.routing_id, options.routing_id_size);
     }
 
@@ -200,7 +199,7 @@ void zmq::mechanism_t::make_command_with_basic_properties(msg_t *msg_, const cha
     memcpy(ptr, prefix_, prefix_len_);
     ptr += prefix_len_;
 
-    add_basic_properties(ptr, command_size - (ptr - static_cast<unsigned char *>(msg_->data())));
+    add_basic_properties(ptr, command_size - (ptr - static_cast<unsigned char *>(msg_->data())));   // 内部构造 routing_id 消息
 }
 
 int zmq::mechanism_t::parse_metadata(const unsigned char *ptr_, size_t length_, bool zap_flag_)
@@ -232,7 +231,7 @@ int zmq::mechanism_t::parse_metadata(const unsigned char *ptr_, size_t length_, 
         bytes_left -= value_length;
 
         if (name == ZMTP_PROPERTY_IDENTITY && options.recv_routing_id)
-            set_peer_routing_id(value, value_length);
+            set_peer_routing_id(value, value_length);       // 将接收到的 routing_id 消息保存到 _routing_id 中
         else if (name == ZMTP_PROPERTY_SOCKET_TYPE)
         {
             if (!check_socket_type(reinterpret_cast<const char *>(value), value_length))

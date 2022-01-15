@@ -249,7 +249,8 @@ void zmq::stream_engine_base_t::terminate()
 /***
  * 有数据可读有两种情况：
  * 1. 监听 conn_fd 被触发，从 epoll 返回，调用到 in_event()
- * 2. 在 zmtp_engine_t::plug_internal()/raw_engine_t::plug_internal 中直接调用。调用到 plug_internal() 表明已经完成了连接。所以在这里直接调用 in_event() 尝试从 socket 中读取数据，并不一定要等到 epoll 返回才可以
+ * 2. 在 zmtp_engine_t::plug_internal()/raw_engine_t::plug_internal 中直接调用。调用到 plug_internal() 表明已经完成了连接。所以在这里直接调用
+ * in_event() 尝试从 socket 中读取数据，并不一定要等到 epoll 返回才可以
  */
 void zmq::stream_engine_base_t::in_event()
 {
@@ -259,7 +260,8 @@ void zmq::stream_engine_base_t::in_event()
 }
 
 /**
- * ZMTP 协议是 ZeroMQ 默认的消息传输协议，在 TCP 协议之上定义了向后兼容性的规则，可扩展的安全机制，命令和消息分帧，连接元数据，以及其他传输层功能。所有有关 handshake 的都是 ZMTP 协议的处理逻辑。
+ * ZMTP 协议是 ZeroMQ 默认的消息传输协议，在 TCP
+ * 协议之上定义了向后兼容性的规则，可扩展的安全机制，命令和消息分帧，连接元数据，以及其他传输层功能。所有有关 handshake 的都是 ZMTP 协议的处理逻辑。
  *
  * 如果用户需要使用裸 TCP 协议，则可以创建 raw_engine_t
  */
@@ -271,7 +273,8 @@ bool zmq::stream_engine_base_t::in_event_internal()
     if (unlikely(_handshaking)) // 在构造函数中被初始化成了 true
     {
         /**
-         * 1. zmtp_engine: handshake() 会从 conn_fd 中读取对端发送的 greeting 消息
+         * 1. zmtp_engine: handshake() 会从 conn_fd 中读取对端发送的 greeting 消息，并修改 _process_msg 和 _next_msg 指针的指向（这很重要，发送和接收routing_id_msg 都是在 _process_msg 和 _next_msg 中完成的）
+         *
          * 2. raw_engine: handshake() 直接返回 true
          */
         if (handshake())
@@ -311,7 +314,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
         // 在这里分配了 buffer 的内存，并让 _inpos 指向这块 buffer
         _decoder->get_buffer(&_inpos, &bufsize);
 
-        const int rc = read(_inpos, bufsize);       // engine 从内核读取数据
+        const int rc = read(_inpos, bufsize); // engine 从内核读取数据
 
         if (rc == -1)
         {
@@ -340,8 +343,12 @@ bool zmq::stream_engine_base_t::in_event_internal()
         _insize -= processed;
         if (rc == 0 || rc == -1)
             break;
-        // 如果是 zmtp_engine，_process_msg 最开始指向 process_routing_id_msg. 这是因为对端 socket 的 engine 会发送过来一条 routing_id 消息
-        rc = (this->*_process_msg)(_decoder->msg()); // 将从内核读取到的数据 push 给 session(push_msg_to_session)
+
+        /**
+         * 在 zmtp_engine 的构造函数中，_process_msg 指向了 process_routing_id_msg，但是在 handshake 中将 _process_msg 指向 process_handshake_command
+         * 在 process_handshake_command 中，接收对端发送过来的 routing_id 消息，然后将该 routing_id 消息递交给 socket, 由 socket 生成 UUID
+         */
+        rc = (this->*_process_msg)(_decoder->msg());
         if (rc == -1)
             break;
     }
@@ -360,7 +367,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
         reset_pollin(_handle);
     }
 
-    _session->flush();      // 刷新数据
+    _session->flush(); // 刷新数据
     return true;
 }
 
@@ -403,13 +410,16 @@ void zmq::stream_engine_base_t::out_event()
 
         /**
          * while 循环在做的事情：
-         * 1. 从 socket 和 session 通信的队列中读取消息（socket 可能发送了多帧消息，这多帧消息存放在不同的内存，每次 pull 的时候拿到的是每一帧消息的指针）
+         * 1. 从 socket 和 session 通信的队列中读取消息（socket 可能发送了多帧消息，这多帧消息存放在不同的内存，每次 pull
+         * 的时候拿到的是每一帧消息的指针）
          * 2. 拿到每一帧存放在不同内存区域的消息的指针，将其拷贝到连续的一块内存区域 _outpos 中
          */
         while (_outsize < static_cast<size_t>(_options.out_batch_size))
         {
-            // pull msg from session（不同的 engine ，该函数指针不同. 如果是 zmtp_engine，连接刚建立时该函数指针指向 routing_id_msg）
-            // 注意：连接刚建立的时候，如果是 zmtp_engine，则会由engine构造一条routing_id消息发送给对方，由对方生成UUID标识路由
+            /**
+             * 在 zmtp_engine 的构造函数中，_next_msg 是指向 routing_id_msg 的，但是在 handshake() 中，将 _next_msg 指向了 next_handshake_command；
+             * 在 next_handshake_command 调用中会构造一条 routing_id 的消息，然后发送给对端 socket，由对端 socket 生成 UUID
+             */
             if ((this->*_next_msg)(&_tx_msg) == -1)
             {
                 //  ws_engine can cause an engine error and delete it, so
@@ -442,25 +452,26 @@ void zmq::stream_engine_base_t::out_event()
     //  arbitrarily large. However, we assume that underlying TCP layer has
     //  limited transmission buffer and thus the actual number of bytes
     //  written should be reasonably modest.
-    const int nbytes = write(_outpos, _outsize);        // engine 将数据写给 内核（_outpos 是一块连续的内存区域，包含要发送的消息，可能是多帧）
+    const int nbytes = write(_outpos, _outsize); // engine 将数据写给 内核（_outpos 是一块连续的内存区域，包含要发送的消息，可能是多帧）
 
     //  IO error has occurred. We stop waiting for output events.
     //  The engine is not terminated until we detect input error;
     //  this is necessary to prevent losing incoming messages.
     if (nbytes == -1)
     {
-        reset_pollout(); // IO 发生错误（socket 错误或者发送缓冲区已写满），停止监听 EPOLLOUT 事件（下次发送缓冲区可写的时候可以重新监听 EPOLLOUT 事件）
+        reset_pollout(); // IO 发生错误（socket 错误或者发送缓冲区已写满），停止监听 EPOLLOUT 事件（下次发送缓冲区可写的时候可以重新监听 EPOLLOUT
+                         // 事件）
         return;
     }
 
     _outpos += nbytes;
-    _outsize -= nbytes;         // 数据发送完毕后，_outsize 会被重置为 0
+    _outsize -= nbytes; // 数据发送完毕后，_outsize 会被重置为 0
 
     //  If we are still handshaking and there are no data
     //  to send, stop polling for output.
     if (unlikely(_handshaking))
         if (_outsize == 0)
-            reset_pollout();    // 只有当仍在 handshanke 并且没有数据发送的时候，才不会继续监听 EPOLLOUT 事件
+            reset_pollout(); // 只有当仍在 handshanke 并且没有数据发送的时候，才不会继续监听 EPOLLOUT 事件
 }
 
 /**
@@ -487,7 +498,7 @@ void zmq::stream_engine_base_t::restart_output()
     //  was sent by the user the socket is probably available for writing.
     //  Thus we try to write the data to socket avoiding polling for POLLOUT.
     //  Consequently, the latency should be better in request/reply scenarios.
-    out_event();    // 直接写，不用等 EPOLLOUT 触发
+    out_event(); // 直接写，不用等 EPOLLOUT 触发
 }
 
 bool zmq::stream_engine_base_t::restart_input()
@@ -564,7 +575,7 @@ int zmq::stream_engine_base_t::next_handshake_command(msg_t *msg_)
         errno = EPROTO;
         return -1;
     }
-    const int rc = _mechanism->next_handshake_command(msg_);
+    const int rc = _mechanism->next_handshake_command(msg_);        // 内部会构造 routing_id 的消息
 
     if (rc == 0)
         msg_->set_flags(msg_t::command);
@@ -575,11 +586,11 @@ int zmq::stream_engine_base_t::next_handshake_command(msg_t *msg_)
 int zmq::stream_engine_base_t::process_handshake_command(msg_t *msg_)
 {
     zmq_assert(_mechanism != NULL);
-    const int rc = _mechanism->process_handshake_command(msg_);
+    const int rc = _mechanism->process_handshake_command(msg_); // 接收对端发送过来的 routing_id 消息，并保存到本地
     if (rc == 0)
     {
         if (_mechanism->status() == mechanism_t::ready)
-            mechanism_ready();
+            mechanism_ready(); // 将 routing_id 消息发送给 socket
         else if (_mechanism->status() == mechanism_t::error)
         {
             errno = EPROTO;
@@ -630,8 +641,8 @@ void zmq::stream_engine_base_t::mechanism_ready()
     if (_options.recv_routing_id)
     {
         msg_t routing_id;
-        _mechanism->peer_routing_id(&routing_id);
-        const int rc = _session->push_msg(&routing_id);
+        _mechanism->peer_routing_id(&routing_id);       // 构造 routing_id 消息
+        const int rc = _session->push_msg(&routing_id); // 将 routing_id 消息发送给 session
         if (rc == -1 && errno == EAGAIN)
         {
             // If the write is failing at this stage with
@@ -660,7 +671,7 @@ void zmq::stream_engine_base_t::mechanism_ready()
     }
 
     if (flush_session)
-        _session->flush();
+        _session->flush(); // 给 socket 发送信号，从 session 中接收消息
 
     _next_msg = &stream_engine_base_t::pull_and_encode;
     _process_msg = &stream_engine_base_t::write_credential;

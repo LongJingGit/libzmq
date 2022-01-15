@@ -101,7 +101,7 @@ void zmq::router_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool loc
     }
 
     const bool routing_id_ok = identify_peer(pipe_, locally_initiated_);    // 识别对端 routing_id（会读取消息）
-    if (routing_id_ok)  // 如果对端确实发送了空消息或者含有 routing_id 的消息
+    if (routing_id_ok)  // 如果对端确实发送了空消息或者含有 routing_id 的消息（连接刚建立之后，zmtp_engine 会发送 routing_id 的消息给 router 生成 UUID，用于标识对方 socket）
         _fq.attach(pipe_);
     else
         _anonymous_pipes.insert(pipe_);
