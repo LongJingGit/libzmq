@@ -43,6 +43,10 @@ zmq::dealer_t::dealer_t(class ctx_t *parent_, uint32_t tid_, int sid_)
 
 zmq::dealer_t::~dealer_t() {}
 
+/**
+ * DEALER是一种负载均衡，它会将消息分发给已连接的节点，并使用公平队列的机制处理接受到的消息。DEALER的作用就像是PUSH和PULL的结合。
+ */
+
 void zmq::dealer_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool locally_initiated_)
 {
     LIBZMQ_UNUSED(subscribe_to_all_);

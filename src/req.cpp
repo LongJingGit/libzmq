@@ -50,6 +50,10 @@ zmq::req_t::req_t(class ctx_t *parent_, uint32_t tid_, int sid_)
 
 zmq::req_t::~req_t() {}
 
+/**
+ * REQ发送消息时会在消息顶部插入一个空帧，接收时会将空帧移去。其实 REQ 是建立在 DEALER 之上的，但REQ只有当消息发送并接受到回应后才能继续运行。
+ */
+
 // req 在发送消息时会在消息顶部插入一个空帧，接收时会将空帧移去
 int zmq::req_t::xsend(msg_t *msg_)
 {

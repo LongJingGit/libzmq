@@ -77,7 +77,7 @@ void zmq::fq_t::activated(pipe_t *pipe_)
 {
     //  Move the pipe to the list of active pipes.
     _pipes.swap(_pipes.index(pipe_), _active);
-    _active++;
+    _active++;  // 活动的管道数量
 }
 
 int zmq::fq_t::recv(msg_t *msg_)
@@ -120,8 +120,8 @@ int zmq::fq_t::recvpipe(msg_t *msg_, pipe_t **pipe_)
         //  we should get the remaining parts without blocking.
         zmq_assert(!_more);
 
-        _active--;
-        _pipes.swap(_current, _active);
+        _active--;  // 如果从当前管道没有读取到数据，则将当前管道禁用（下次对端 socket 发送过来数据之后，会重新 activate）
+        _pipes.swap(_current, _active);     // 修改 current，读取下一个 pipe 中的数据
         if (_current == _active)
             _current = 0;
     }

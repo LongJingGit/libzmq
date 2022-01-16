@@ -71,6 +71,10 @@ zmq::router_t::~router_t()
 }
 
 /**
+ * ROUTER在收到消息时会在顶部添加一个信封，标记消息来源。发送时会通过该信封决定哪个节点可以获取到该条消息。
+ */
+
+/**
  * 如果 router 做客户端，会在 socket_base_t::connect --> xattach_pipe，但是在这里 routing_id_ok 会为 false(因为还没读取到对端发送过来的空消息，无法生成 UUID)，所以不会 _fq.attach(pipe_)。当连接完全建立之后，对端会发送空消息，然后 router 在 router_t::xread_activated 中读取空消息，为对端生成 UUID 标识，并执行 _fq.attach(pipe_)
  *
  * 如果 router 做服务端，会在连接建立之后，session_base_t::engine_ready 创建 pipe，并给 socket 发送 bind 命令。socket 在 zmq_recv 的时候会处理该命令，然后读取对端发送过来的空消息，并为其生成 UUID
@@ -188,7 +192,7 @@ void zmq::router_t::xread_activated(pipe_t *pipe_)
 {
     const std::set<pipe_t *>::iterator it = _anonymous_pipes.find(pipe_);
     if (it == _anonymous_pipes.end())
-        _fq.activated(pipe_);
+        _fq.activated(pipe_);       // 将该 pipe 标记为活动的
     else
     {
         const bool routing_id_ok = identify_peer(pipe_, false);
@@ -219,6 +223,7 @@ int zmq::router_t::xsend(msg_t *msg_)
             //  If there's no such pipe just silently ignore the message, unless
             //  router_mandatory is set.
             // 该消息是含有套接字标识(routing_id)的消息，主要是用来寻找路由方向(发送给哪个套接字)，所以找到之后就无需发送了，直接关闭
+            // 也就是说，该条消息实际上并没有被发送出去，对端也无法接收到该条消息（如果对端还没有连接上来，router 找不到路由方向，会丢弃后续消息）
             out_pipe_t *out_pipe = lookup_out_pipe(blob_t(static_cast<unsigned char *>(msg_->data()), msg_->size(), zmq::reference_tag_t()));
 
             if (out_pipe)
@@ -267,7 +272,7 @@ int zmq::router_t::xsend(msg_t *msg_)
     _more_out = (msg_->flags() & msg_t::more) != 0;
 
     //  Push the message into the pipe. If there's no out pipe, just drop it.
-    if (_current_out)
+    if (_current_out)   // 已经找到了路由
     {
         // Close the remote connection if user has asked to do so
         // by sending zero length message.
@@ -283,7 +288,7 @@ int zmq::router_t::xsend(msg_t *msg_)
             return 0;
         }
 
-        const bool ok = _current_out->write(msg_);
+        const bool ok = _current_out->write(msg_);      // 发送数据
         if (unlikely(!ok))
         {
             // Message failed to send - we must close it ourselves.
@@ -305,6 +310,7 @@ int zmq::router_t::xsend(msg_t *msg_)
     }
     else
     {
+        // 没有找到路由，直接丢弃消息
         const int rc = msg_->close();
         errno_assert(rc == 0);
     }
@@ -320,6 +326,7 @@ int zmq::router_t::xrecv(msg_t *msg_)
 {
     if (_prefetched)
     {
+        // 在这里会将保存的空消息发送给应用程序
         if (!_routing_id_sent)
         {
             const int rc = msg_->move(_prefetched_id);
@@ -390,7 +397,7 @@ int zmq::router_t::xrecv(msg_t *msg_)
         _prefetched = true;
         _current_in = pipe;     // 接收到对端发送过来的空消息，会用来寻找 pipe，然后用该 pipe 接收剩下的真实的用户消息
 
-        const blob_t &routing_id = pipe->get_routing_id();      // pipe 的 UUID 已经在 xattach_pipe 保存下来了
+        const blob_t &routing_id = pipe->get_routing_id();      // pipe 的 UUID 已经在 identify_peer 调用中保存下来了
         rc = msg_->init_size(routing_id.size());
         errno_assert(rc == 0);
         memcpy(msg_->data(), routing_id.data(), routing_id.size());     // 将 routing_id 作为消息返回给用户

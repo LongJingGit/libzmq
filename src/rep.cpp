@@ -65,6 +65,12 @@ int zmq::rep_t::xsend(msg_t *msg_)
     return 0;
 }
 
+/**
+ * REP在收到消息时会将第一个空帧之前的所有信息保存起来，将原始信息传送给应用程序。
+ * 在发送消息时，REP会用刚才保存的信息包裹应答消息。
+ * REP其实是建立在ROUTER之上的，但和REQ一样，必须完成接受和发送这两个动作后才能继续。
+ */
+
 int zmq::rep_t::xrecv(msg_t *msg_)
 {
     //  If we are in middle of sending a reply, we cannot receive next request.
@@ -109,7 +115,7 @@ int zmq::rep_t::xrecv(msg_t *msg_)
     }
 
     //  Get next message part to return to the user.
-    const int rc = router_t::xrecv(msg_);       // 这里会读取真正的用户消息
+    const int rc = router_t::xrecv(msg_);       // 这里会读取真正的用户消息，将原始的数据返回给应用程序
     if (rc != 0)
         return rc;
 
