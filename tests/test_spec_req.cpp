@@ -57,8 +57,10 @@ void test_round_robin_out (const char *bind_address_)
     }
 
     /**
-     * req 和 rep 的连接刚建立，触发了双方的 EPOLLOUT 和 EPOLLIN 事件，双方会在 out_event() 和 in_event() 中构造一条 routing_id 消息，
-     * 发送给对端，由对端生成 UUID。
+     * @brief 信封的生成过程：
+     * 1. connect 成功之后，触发 req 的 EPOLLOUT 事件，req 会在 out_event() 中构造一条 routing_id 的消息发送给 rep
+     * 2. rep 触发 EPOLLIN 事件，在 in_event() 中接收该 routing_id 的消息并递交给 rep socket，然后给 rep socket 发送 activate_read 命令读取该消息
+     * 3. 当 rep 在调用 recv 接收真实的用户消息之前，会先处理 pending 的命令。比如处理 activate_read 命令：读取 routing_id 消息，然后在 xread_activated 中接收该消息并为对端生成 UUID 标识
      *
      * 具体的代码可以参考 stream_engine_base_t::out_event() 和 stream_engine_base_t::in_event()
      */

@@ -44,7 +44,7 @@ char connect_address[MAX_SOCKET_STRING];
  * 1. 作为服务端的 rep，在客户端 req 完全连接上来之后，rep 才会创建 pipe 并且执行 socket attach pipe 的指令
  * 2. 作为客户端的 req，在调用 zmq_connect 的时候就会执行 attach pipe。
  *
- * req 和 rep 的连接完全建立之后，req 会发送一帧空消息给 rep，由 rep 生成 UUID 标识消息来源
+ * req 和 rep 的连接完全建立之后，req 的 EPOLLOUT 事件触发，会在 out_event() 中发送 routing_id 的消息给对端，由 rep 生成 UUID 标识消息的来源
  *
  * 需要注意的是：req 发送命令，rep 接收命令。（rep 在接收到命令之前不会主动发送命令）
  */
@@ -63,6 +63,8 @@ void test_fair_queue_in (const char *bind_address_)
 
         TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (reqs[peer], connect_address));
     }
+
+    // connect 成功之后，req 就会发送 routing_id 的消息
 
     msleep (SETTLE_TIME);
 
