@@ -30,8 +30,6 @@
 #ifndef __IPC_CONNECTER_HPP_INCLUDED__
 #define __IPC_CONNECTER_HPP_INCLUDED__
 
-#define ZMQ_HAVE_IPC    // add by jinglong in 2022年1月4日11:13:48
-
 #if defined ZMQ_HAVE_IPC
 
 #include "fd.hpp"

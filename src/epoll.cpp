@@ -27,8 +27,6 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#define ZMQ_IOTHREAD_POLLER_USE_EPOLL
-
 #include "precompiled.hpp"
 #if defined ZMQ_IOTHREAD_POLLER_USE_EPOLL
 #    include "epoll.hpp"
