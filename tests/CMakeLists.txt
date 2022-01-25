@@ -74,7 +74,10 @@ set(tests
     test_reconnect_ivl
     test_reconnect_options
     test_tcp_accept_filter
-    test_mock_pub_sub)
+    test_mock_pub_sub
+    Ipclient
+    Ipserver
+    spqueue)
 
 if(NOT WIN32)
   list(APPEND tests test_security_gssapi test_socks test_connect_null_fuzzer test_bind_null_fuzzer test_connect_fuzzer test_bind_fuzzer)
