@@ -116,7 +116,7 @@ void test_roundtrip ()
         TEST_ASSERT_SUCCESS_ERRNO (zmq_msg_send (&msg, dealer, rcvmore ? ZMQ_SNDMORE : 0));      // dealer 发送消息给 rep
     }
 
-    // rep 在接收消息的时候，会直接将 带有 UUID 的消息和空消息发送给 ROUTER
+    // rep 在接收消息的时候，会直接将 带有 UUID 的消息和空消息发送给 ROUTER（也就是说，带有 UUID 的消息和空消息不会递交给上层应用）
 
     //  Receive the request.
     recv_string_expect_success (rep, "ABC", 0);
