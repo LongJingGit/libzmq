@@ -62,7 +62,7 @@ IO 线程(io_thread_t)是 ZMQ 异步处理网络 IO 的后台线程。它的实�
 
 继承 object_t 使得 io_thread_t 能够发送和接收 command（如 stop 命令，当收到该命令时，IO 线程将被终止）。
 
-i_poll_events 接口定义了文件描述符和计时器事件就绪时的回调处理函数（in_event/out_event/timer_event）。io_thread_t 实现此接口(in_event)来处理来自mailbox 的事件。当 mailbox_t 事件触发时，IO 线程从 mailbox 中获取命令，并让命令的接收者进行处理。
+i_poll_events 接口定义了文件描述符和计时器事件就绪时的回调处理函数（in_event/out_event/timer_event）。io_thread_t 实现此接口(in_event)来处理来自mailbox 的事件。当 mailbox_t 事件触发时，IO 线程从 mailbox 中获取命令，并让命令的接收者进行处理。 
 
 mailbox_t 用来存储发送给任何居住在 io_thread_t 上的 object_t 的命令，每个 io_thread_t 上有多个对象，这些对象共用同一个邮箱，邮箱的收件人就是对象。mailbox_t 本质是一个具有就绪通知功能的存储命令的队列。就绪通知机制由 signaler_t 提供的文件描述符实现。队列是由 ypipe_t 实现的无锁无溢出队列。
 
@@ -221,7 +221,7 @@ ZeroMQ 把通讯的需求看成四类。其中一类是一对一结对通讯，�
 
 ### 传输方式
 
-ZeroMQ 支持多种传输方式：tcp、udp、inproc（进程内）、ipc（进程间）、tipc（进程间）、pgm（广播）、epgm（广播）、norm、ws、wss、vmci
+ZeroMQ 支持多种传输方式：tcp、udp、inproc（进程内）、ipc（进程间）、tipc（进程间）、pgm（广播/可靠组播）、epgm（广播）、norm、ws、wss、vmci
 
 TCP: AF_INET/AF_INET6 socket
 
