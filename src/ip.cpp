@@ -117,7 +117,7 @@ zmq::fd_t zmq::open_socket(int domain_, int type_, int protocol_)
         return retired_fd;
     }
 
-    make_socket_noninheritable(s);
+    make_socket_noninheritable(s);  // close on exec
 
     //  Socket is not yet connected so EINVAL is not a valid networking error
     rc = zmq::set_nosigpipe(s);

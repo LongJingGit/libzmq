@@ -139,7 +139,7 @@ int zmq::null_mechanism_t::process_handshake_command(msg_t *msg_)
 
     int rc = 0;
     if (data_size >= ready_command_name_len && !memcmp(cmd_data, ready_command_name, ready_command_name_len))
-        rc = process_ready_command(cmd_data, data_size);
+        rc = process_ready_command(cmd_data, data_size); // 接收 routing_id 消息
     else if (data_size >= error_command_name_len && !memcmp(cmd_data, error_command_name, error_command_name_len))
         rc = process_error_command(cmd_data, data_size);
     else
@@ -202,6 +202,11 @@ int zmq::null_mechanism_t::zap_msg_available()
     return rc == -1 ? -1 : 0;
 }
 
+/**
+ * ready 的条件：
+ * 1. routing_id 消息已发送（调用到 next_handshake_command，但是并不一定会发送 routing_id 消息）
+ * 2. 已接收到对端的 routing_id 消息（调用到 process_ready_command）
+ */
 zmq::mechanism_t::status_t zmq::null_mechanism_t::status() const
 {
     if (_ready_command_sent && _ready_command_received)

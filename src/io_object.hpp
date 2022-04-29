@@ -74,6 +74,10 @@ class io_object_t : public i_poll_events
     void timer_event (int id_) ZMQ_OVERRIDE;
 
   private:
+  /**
+   * io_object 可以获取 io_thread 的 poller，从而具备 poller 的功能。
+   * 所有继承于该类的子类都具有 poller 的功能，可监听句柄的读写异常状态
+   */
     poller_t *_poller;      // 在实例化 io_object_t 的时候，就会调用 ::plug 接口获取 _poller 指针
 
     ZMQ_NON_COPYABLE_NOR_MOVABLE (io_object_t)

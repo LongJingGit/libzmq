@@ -81,7 +81,7 @@ static const char wss[] = "wss";
 static const char ipc[] = "ipc";                // 进程间
 #endif
 #if defined ZMQ_HAVE_TIPC
-static const char tipc[] = "tipc";
+static const char tipc[] = "tipc";              // 进程间
 #endif
 #if defined ZMQ_HAVE_VMCI
 static const char vmci[] = "vmci";

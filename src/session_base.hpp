@@ -119,7 +119,7 @@ private:
     const bool _active;         // 对于 server 端，创建 session 的时候置为 false；对于 client，创建 session 的时候置为 true
 
     //  Pipe connecting the session to its socket.
-    zmq::pipe_t *_pipe; // IO 线程和 socket 进行数据交换的管道
+    zmq::pipe_t *_pipe; // IO 线程和 socket 进行数据交换的管道（session 和 socket 通信的 pipe）
 
     //  Pipe used to exchange messages with ZAP socket.
     zmq::pipe_t *_zap_pipe;

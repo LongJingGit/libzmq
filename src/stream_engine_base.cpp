@@ -192,7 +192,7 @@ void zmq::stream_engine_base_t::plug(io_thread_t *io_thread_, session_base_t *se
     _socket = _session->get_socket();
 
     //  Connect to I/O threads poller object.
-    io_object_t::plug(io_thread_);
+    io_object_t::plug(io_thread_); // engine 获取 io_thread 的 poller
 
     // 将 conn_fd 加入到 poller 的内核监听队列中(在派生类 engine 中会设置 in_event 和 out_event)
     _handle = add_fd(_s);
@@ -247,7 +247,7 @@ void zmq::stream_engine_base_t::terminate()
 }
 
 /***
- * 有数据可读有两种情况：
+ * in_event 接口被调用到的两种情况：
  * 1. 监听 conn_fd 被触发，从 epoll 返回，调用到 in_event()
  * 2. 在 zmtp_engine_t::plug_internal()/raw_engine_t::plug_internal 中直接调用。调用到 plug_internal() 表明已经完成了连接。所以在这里直接调用
  * in_event() 尝试从 socket 中读取数据，并不一定要等到 epoll 返回才可以
@@ -273,7 +273,8 @@ bool zmq::stream_engine_base_t::in_event_internal()
     if (unlikely(_handshaking)) // 在构造函数中被初始化成了 true
     {
         /**
-         * 1. zmtp_engine: handshake() 会从 conn_fd 中读取对端发送的 greeting 消息，并修改 _process_msg 和 _next_msg 指针的指向（这很重要，发送和接收routing_id_msg 都是在 _process_msg 和 _next_msg 中完成的）
+         * 1. zmtp_engine: handshake() 会从 conn_fd 中读取对端发送的 greeting 消息，并修改 _process_msg 和 _next_msg
+         * 指针的指向（这很重要，发送和接收routing_id_msg 都是在 _process_msg 和 _next_msg 中完成的）
          *
          * 2. raw_engine: handshake() 直接返回 true
          */
@@ -284,7 +285,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
             _handshaking = false;
 
             if (_mechanism == NULL && _has_handshake_stage)
-                _session->engine_ready();
+                _session->engine_ready(); // 在这里面会创建 session 和 socket 通信的 pipe
         }
         // greeting 的过程需要双方收发两条消息，所以只有第二条 greeting 完全接收完之后，handshake() 才会返回 true，其他情况都返回 false
         else
@@ -393,6 +394,16 @@ void zmq::stream_engine_base_t::out_event()
 {
     zmq_assert(!_io_error);
 
+    /**
+     * 1. 当连接建立完成之后，EPOLLOUT 事件触发，此时由于 _outpos 中填充了 greeting 消息，_outsize 非 0，
+     * 所以本端会直接向对端发送 outpos 中的 greeting 消息，同样的，对端也会是这样的操作。然后，双方在 in_event 中分别解析对端的 greeting 消息
+     *
+     * 2. 当 handshake 完成之后，outsize 为 0，（req/dealer/router 类型的 socket）在 next_handshake_command
+     * 中开始构造 routing_id 消息，发送给对端，由对端的 socket 生成 UUID
+     *
+     * 3. 上述两步全部完成之后，才开始发送正常的消息
+     */
+
     //  If write buffer is empty, try to read new data from the encoder.
     if (!_outsize)
     {
@@ -417,7 +428,7 @@ void zmq::stream_engine_base_t::out_event()
         while (_outsize < static_cast<size_t>(_options.out_batch_size))
         {
             /**
-             * 在 zmtp_engine 的构造函数中，_next_msg 是指向 routing_id_msg 的，但是在 handshake() 中，将 _next_msg 指向了 next_handshake_command；
+             * 在 zmtp_engine 的构造函数中，_next_msg 是指向 routing_id_msg 的，但是在 handshake() 中，将 _next_msg 指向了 next_handshake_command
              * 在 next_handshake_command 调用中会构造一条 routing_id 的消息，然后发送给对端 socket，由对端 socket 生成 UUID
              */
             if ((this->*_next_msg)(&_tx_msg) == -1)
@@ -575,7 +586,7 @@ int zmq::stream_engine_base_t::next_handshake_command(msg_t *msg_)
         errno = EPROTO;
         return -1;
     }
-    const int rc = _mechanism->next_handshake_command(msg_);        // 内部会构造 routing_id 的消息
+    const int rc = _mechanism->next_handshake_command(msg_); // 内部会构造 routing_id 的消息
 
     if (rc == 0)
         msg_->set_flags(msg_t::command);
@@ -590,7 +601,7 @@ int zmq::stream_engine_base_t::process_handshake_command(msg_t *msg_)
     if (rc == 0)
     {
         if (_mechanism->status() == mechanism_t::ready)
-            mechanism_ready(); // 将 routing_id 消息发送给 socket
+            mechanism_ready(); // （创建 session 和 socket 通信的 pipe）并将接收到的 routing_id 消息发送给 socket
         else if (_mechanism->status() == mechanism_t::error)
         {
             errno = EPROTO;
@@ -634,14 +645,14 @@ void zmq::stream_engine_base_t::mechanism_ready()
     }
 
     if (_has_handshake_stage)
-        _session->engine_ready();
+        _session->engine_ready(); // 可能在这里创建 session 和 socket 通信的 pipe
 
     bool flush_session = false;
 
     if (_options.recv_routing_id)
     {
         msg_t routing_id;
-        _mechanism->peer_routing_id(&routing_id);       // 构造 routing_id 消息
+        _mechanism->peer_routing_id(&routing_id);       // 拷贝接收到的 routing_id 消息
         const int rc = _session->push_msg(&routing_id); // 将 routing_id 消息发送给 session
         if (rc == -1 && errno == EAGAIN)
         {

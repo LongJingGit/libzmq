@@ -156,6 +156,27 @@ protected:
 
     mechanism_t *_mechanism;            // ZMTP 协议使用
 
+    /**
+     * 读写不同类型的消息时，这两个函数指针的指向会不断变化（以下以 zmtp_engine_t 为例）：
+     *
+     * 1. 在 zmtp_engine_t 的构造函数中，函数指针分别指向 routing_id_msg 和 process_routing_id_msg
+     *
+     * 2.1 在 stream_engine_base_t::out_event() 中，双方分别给对端发送 greeting 消息(该消息已经提前在 zmtp_engine_t::plug_internal 中构造完成，该消息用于双方协商版本号和安全机制);
+     *
+     * 2.2 在 stream_engine_base_t::in_event() --> handshake() 中分别接收对端 greeting 消息，双方协商版本号，如果是 zmtp_v3.0 和 v3.1 版本，则会分别指向 next_handshake_command 和 process_handshake_command, handshake() 返回 true;
+     *
+     * 2.3 在 next_handshake_command 中, req/dealer/router 类型的 socket 构造 routing_id 消息, 并将消息发送给对端
+     *
+     * 2.4 在 process_handshake_command 中, 做了如下几件事：
+     *     2.4.1 将从内核接收到的 routing_id 消息进行解析
+     *     2.4.2 创建 session 和 socket 通信的 pipe, 发送命令通知 socket bind 该 pipe, 然后将 routing_id 消息推送给 socket, 由 socket 为对端生成 UUID
+     *     2.4.3 将 _next_msg 和 _process_msg 的指向更改为 pull_and_encode 和 write_credential，开始处理正常的用户数据
+     *
+     * 2.5 pull_and_encode 用于从 session pull 数据，然后发送给内核;
+     *
+     * 2.6 在 write_credential 中，_process_msg 又被指向了 decode_and_push, 该接口用于将从内核读取出来的数据 push 给 session. 需要注意的是：_process_msg 函数指针的指向在后续的处理过程中会根据实际情况，不断变更该函数指针的指向.
+     *
+     */
     int (stream_engine_base_t::*_next_msg)(msg_t *msg_);
     int (stream_engine_base_t::*_process_msg)(msg_t *msg_);
 
@@ -204,7 +225,7 @@ private:
     void mechanism_ready();
 
     //  Underlying socket.
-    fd_t _s;            // 连接 socket，engine 通过该 socket 与内核交换数据（创建 engine 的时候初始化的）
+    fd_t _s;            // conn_fd，engine 通过该 socket 与内核交换数据（创建 engine 的时候初始化的）
 
     handle_t _handle;
 
@@ -227,7 +248,8 @@ private:
 
     //  Indicate if engine has an handshake stage, if it does, engine must call session.engine_ready
     //  when handshake is completed.
-    bool _has_handshake_stage;// 如果创建的是非原生的 engine，则初始化为 true；如果是原生 engine，则初始化为 false。两者使用不同的数据接收流程
+    // zmtp_engine: true        raw_engine: false
+    bool _has_handshake_stage;
 
     ZMQ_NON_COPYABLE_NOR_MOVABLE(stream_engine_base_t)
 };

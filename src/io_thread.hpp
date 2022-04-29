@@ -79,10 +79,14 @@ private:
     mailbox_t _mailbox; // 每个 IO 线程的私有变量
 
     //  Handle associated with mailbox' file descriptor.
-    poller_t::handle_t _mailbox_handle;       // poll_entry_t *
+    poller_t::handle_t _mailbox_handle; // poll_entry_t *
 
     //  I/O multiplexing is performed using a poller object.
-    poller_t *_poller; // 每个 IO 线程都有一个 poller 用来监听本线程的描述符，而不是所有线程共用一个 poller ？
+
+    /**
+     * io_thread 内含一个 poller，可监听句柄的读、写、异常状态，继承自 object_t ，具有接收命令，处理命令和发送命令的功能
+     */
+    poller_t *_poller; // 每个 IO 线程都有一个 poller 用来监听本线程的描述符，而不是所有 IO 线程共用一个 poller
 
     ZMQ_NON_COPYABLE_NOR_MOVABLE(io_thread_t)
 };

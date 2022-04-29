@@ -158,7 +158,7 @@ void zmq::session_base_t::attach_pipe(pipe_t *pipe_)
 
 int zmq::session_base_t::pull_msg(msg_t *msg_)
 {
-    if (!_pipe || !_pipe->read(msg_))       // session 从和 socket 通信的管道中读取数据
+    if (!_pipe || !_pipe->read(msg_)) // session 从和 socket 通信的管道中读取数据
     {
         errno = EAGAIN;
         return -1;
@@ -174,7 +174,7 @@ int zmq::session_base_t::push_msg(msg_t *msg_)
     //  pass subscribe/cancel to the sockets
     if ((msg_->flags() & msg_t::command) && !msg_->is_subscribe() && !msg_->is_cancel())
         return 0;
-    if (_pipe && _pipe->write(msg_))        // session 将数据写入到和 socket 通信的管道中
+    if (_pipe && _pipe->write(msg_)) // session 将数据写入到和 socket 通信的管道中
     {
         const int rc = msg_->init();
         errno_assert(rc == 0);
@@ -349,7 +349,7 @@ zmq::socket_base_t *zmq::session_base_t::get_socket() const
 void zmq::session_base_t::process_plug()
 {
     if (_active)
-        start_connecting(false);        // 只有 client 端才会执行到这里
+        start_connecting(false); // 只有 client 端才会执行到这里
 }
 
 //  This functions can return 0 on success or -1 and errno=ECONNREFUSED if ZAP
@@ -411,15 +411,16 @@ void zmq::session_base_t::process_attach(i_engine *engine_)
 {
     zmq_assert(engine_ != NULL);
     zmq_assert(!_engine);
-    _engine = engine_;          // 绑定 engine 到 session
+    _engine = engine_; // 绑定 engine 到 session
 
     // 如果是 raw_engine_t，则会在这里执行 engine_ready() ; 反之，zmtp_engine_t 不会执行执行 engine_ready
-    if (!engine_->has_handshake_stage())        // stream_engine_base_t::has_handshake_stage()
+    if (!engine_->has_handshake_stage()) // stream_engine_base_t::has_handshake_stage()
     {
-        engine_ready();
+        engine_ready(); // 创建 session 和 socket 通信的 pipe
     }
 
     //  Plug in the engine.
+    // 注意：对于 server 端来说，到目前为止，如果是 zmtp_engine_t ，则此时还没有创建 session 和 socket 通信的 pipe
     _engine->plug(_io_thread, this);
 }
 
@@ -434,7 +435,7 @@ void zmq::session_base_t::engine_ready()
 
         const bool conflate = get_effective_conflate_option(options);
 
-        int hwms[2] = {conflate ? -1 : options.rcvhwm, conflate ? -1 : options.sndhwm};         // 设置 HWM
+        int hwms[2] = {conflate ? -1 : options.rcvhwm, conflate ? -1 : options.sndhwm}; // 设置 HWM
         bool conflates[2] = {conflate, conflate};
         // 创建 session 和 socket 通信的 pipe
         const int rc = pipepair(parents, pipes, hwms, conflates);
@@ -686,7 +687,7 @@ void zmq::session_base_t::start_connecting(bool wait_)
     if (connecter != NULL)
     {
         alloc_assert(connecter);
-        launch_child(connecter);
+        launch_child(connecter); // 发送信号给 connector, 执行 process_plug（实际上是发送信号给 io thread， 然后 IO 线程在 in_event 中）
         return;
     }
 

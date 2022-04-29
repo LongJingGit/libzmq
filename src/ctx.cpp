@@ -430,9 +430,9 @@ bool zmq::ctx_t::start()
     //  Initialise the array of mailboxes. Additional two slots are for
     //  zmq_ctx_term thread and reaper thread.
     _opt_sync.lock();
-    const int term_and_reaper_threads_count = 2;
-    const int mazmq = _max_sockets;
-    const int ios = _io_thread_count;
+    const int term_and_reaper_threads_count = 2; // 用户线程和回收线程
+    const int mazmq = _max_sockets;              // socket
+    const int ios = _io_thread_count;            // IO 线程
     _opt_sync.unlock();
     const int slot_count = mazmq + ios + term_and_reaper_threads_count;
     try
@@ -461,6 +461,7 @@ bool zmq::ctx_t::start()
         goto fail_cleanup_reaper;
     _slots[reaper_tid] = _reaper->get_mailbox();
     // 在 start 的调用内部会创建系统级线程
+    // 回收线程会一直处于 epoll 的 loop 循环中，使用 epoll 监听所有注册的事件，并在事件触发之后调用回调函数，这就是经典的 reactor 模式。
     _reaper->start();
 
     //  Create I/O thread objects and launch them.
@@ -484,6 +485,7 @@ bool zmq::ctx_t::start()
         _io_threads.push_back(io_thread);
         _slots[i] = io_thread->get_mailbox();
         // 在 start 的调用内部会创建系统级线程
+        // IO 线程和回收线程的逻辑类似。采用 reactor 模式监听所有的事件
         io_thread->start();
     }
 
