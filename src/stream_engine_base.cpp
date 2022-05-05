@@ -179,7 +179,7 @@ zmq::stream_engine_base_t::~stream_engine_base_t()
     LIBZMQ_DELETE(_mechanism);
 }
 
-// 将连接 socket 加入到内核监听队列
+// 将 conn_fd 加入到内核监听队列
 void zmq::stream_engine_base_t::plug(io_thread_t *io_thread_, session_base_t *session_)
 {
     zmq_assert(!_plugged);
@@ -285,7 +285,7 @@ bool zmq::stream_engine_base_t::in_event_internal()
             _handshaking = false;
 
             if (_mechanism == NULL && _has_handshake_stage)
-                _session->engine_ready(); // 在这里面会创建 session 和 socket 通信的 pipe
+                _session->engine_ready();
         }
         // greeting 的过程需要双方收发两条消息，所以只有第二条 greeting 完全接收完之后，handshake() 才会返回 true，其他情况都返回 false
         else
@@ -601,7 +601,7 @@ int zmq::stream_engine_base_t::process_handshake_command(msg_t *msg_)
     if (rc == 0)
     {
         if (_mechanism->status() == mechanism_t::ready)
-            mechanism_ready(); // （创建 session 和 socket 通信的 pipe）并将接收到的 routing_id 消息发送给 socket
+            mechanism_ready(); // 创建 session 和 socket 通信的 pipe, 并将接收到的 routing_id 消息发送给 socket
         else if (_mechanism->status() == mechanism_t::error)
         {
             errno = EPROTO;
@@ -645,7 +645,7 @@ void zmq::stream_engine_base_t::mechanism_ready()
     }
 
     if (_has_handshake_stage)
-        _session->engine_ready(); // 可能在这里创建 session 和 socket 通信的 pipe
+        _session->engine_ready(); // 创建 session 和 socket 通信的 pipe，并给 socket 发送命令绑定 pipe, 后面 socket 可以通过该 pipe 读取消息
 
     bool flush_session = false;
 
@@ -653,7 +653,7 @@ void zmq::stream_engine_base_t::mechanism_ready()
     {
         msg_t routing_id;
         _mechanism->peer_routing_id(&routing_id);       // 拷贝接收到的 routing_id 消息
-        const int rc = _session->push_msg(&routing_id); // 将 routing_id 消息发送给 session
+        const int rc = _session->push_msg(&routing_id); // 将 routing_id 消息发送给 session（其实是写入到上面创建的和 socket 通信的 pipe 中）
         if (rc == -1 && errno == EAGAIN)
         {
             // If the write is failing at this stage with
@@ -684,6 +684,7 @@ void zmq::stream_engine_base_t::mechanism_ready()
     if (flush_session)
         _session->flush(); // 给 socket 发送信号，从 session 中接收消息
 
+    // 收到 routing_id 消息之后， 改变 _next_msg 和 _process_msg 函数指针，从此之后，开始正常的发送和接收消息流程
     _next_msg = &stream_engine_base_t::pull_and_encode;
     _process_msg = &stream_engine_base_t::write_credential;
 
@@ -736,7 +737,7 @@ int zmq::stream_engine_base_t::write_credential(msg_t *msg_)
             return -1;
         }
     }
-    _process_msg = &stream_engine_base_t::decode_and_push;
+    _process_msg = &stream_engine_base_t::decode_and_push;      // 在这里，将从内核读取出来的用户数据 decode 之后，然后 push 给 session
     return decode_and_push(msg_);
 }
 

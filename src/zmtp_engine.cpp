@@ -70,8 +70,6 @@ zmq::zmtp_engine_t::zmtp_engine_t(fd_t fd_, const options_t &options_, const end
     , _subscription_required(false)
     , _heartbeat_timeout(0)
 {
-    // 如果创建的 zmtp_engine，则在连接成功之后会发送 routing_id_msg。这是 engine 的处理逻辑，和 socket 无关(具体实现参考 _next_msg/_process_msg)
-    // FIXME: 本模块中关于 routing_id message 消息的发送与接收流程待确定？？？
     _next_msg = static_cast<int (stream_engine_base_t::*)(msg_t *)>(&zmtp_engine_t::routing_id_msg);
     _process_msg = static_cast<int (stream_engine_base_t::*)(msg_t *)>(&zmtp_engine_t::process_routing_id_msg);
 
@@ -104,18 +102,20 @@ void zmq::zmtp_engine_t::plug_internal()
     //  The 'length' field is encoded in the long format.
     // 构造 greeting 消息（当向内核注册 conn_fd 之后，如果 conn_fd 可写，会在 out_event() 中发送 greeting 消息）
     _outpos = _greeting_send;
-    _outpos[_outsize++] = UCHAR_MAX;        // 0xff
+    _outpos[_outsize++] = UCHAR_MAX; // 0xff
     put_uint64(&_outpos[_outsize], _options.routing_id_size + 1);
     _outsize += 8;
     _outpos[_outsize++] = 0x7f;
 
-    set_pollin();       // 设置 conn_fd 可读事件回调函数。当 conn_fd 可读时，从 socket 读取 greeting 消息
-    set_pollout();      // 设置 conn_fd 可写事件回调函数。当 conn_fd 可写时，从 socket 写入 greeting 消息
+    set_pollin(); // 设置 conn_fd 可读事件回调函数。当 conn_fd 可读时，从 socket 读取 greeting 消息（stream_engine_base_t::in_event()）
+    set_pollout(); // 设置 conn_fd 可写事件回调函数。当 conn_fd 可写时，从 socket 写入 greeting 消息（stream_engine_base_t::out_event()）
     //  Flush all the data that may have been already received downstream.
     /**
      * @brief 对端可能已经写入了数据，所以在这里直接调用 in_event() 处理数据，不用等待 epoll 返回（比如处理对端发送过来的 greeting 消息）
      *
-     * 比如 tcp 通信中，如果 server 端启动顺序先于 cliend 端；则当 client 端的 conn_fd 还未被加入到内核监听队列(未调用到 add_fd 和 set_pollout)，server 端的 conn_fd 的 EPOLLOUT 事件就已经被触发了(这是因为当 client 端 connect 成功之后，server 端就已经可写了)，server 端就会发送 greeting 消息过来。所以对于此时的 client 来说，不需要等到 epoll 返回再去读取数据，而是可以直接尝试从内核读取数据。
+     * 比如 tcp 通信中，如果 server 端启动顺序先于 client 端；则当 client 端的 conn_fd 还未被加入到内核监听队列(未调用到 add_fd 和
+     * set_pollout)，server 端的 conn_fd 的 EPOLLOUT 事件就已经被触发了(这是因为当 client 端 connect 成功之后，server 端就已经可写了)，server
+     * 端就会发送 greeting 消息过来。所以对于此时的 client 来说，不需要等到 epoll 返回再去读取数据，而是可以直接尝试从内核读取数据。
      */
     in_event();
 }
@@ -123,7 +123,6 @@ void zmq::zmtp_engine_t::plug_internal()
 //  Position of the revision and minor fields in the greeting.
 const size_t revision_pos = 10;
 const size_t minor_pos = 11;
-#include <iostream>
 bool zmq::zmtp_engine_t::handshake()
 {
     zmq_assert(_greeting_bytes_read < _greeting_size);
@@ -133,7 +132,16 @@ bool zmq::zmtp_engine_t::handshake()
         return false;
     const bool unversioned = rc != 0;
 
-    // select_handshake_fun 中会实例化 _encoder，_decoder 以及 _mechanism，并设置函数指针 _process_msg 和 _next_msg
+    /**
+     * 根据 greeting_id 消息（协商双方版本号和安全机制），实例化 _encoder，_decoder 以及 _mechanism, 并设置函数指针 _process_msg 和 _next_msg
+     *
+     *  1. 如果是 v1_0 和 v2_0，会实例化 _encoder, _decoder; _mechanism 和 _process_msg 以及 _next_msg 仍然为构造函数中初始化值
+     *    1.1 _mechanism 在 stream_engine_base_t 构造函数中初始化为 NULL
+     *    1.2 _process_msg 以及 _next_msg 在 zmtp_engine_t 的构造函数中分别被初始化为 routing_id_msg 和 process_routing_id_msg
+     *
+     * 2. 如果 v3_0 和 v3_1, 会实例化 _encoder, _decoder 以及 _mechanism, 并且将 _process_msg 和 _next_msg 指向新的函数地址
+     *    2.1 _process_msg 和 _next_msg 分别指向 process_handshake_command 和 next_handshake_command
+     */
     if (!(this->*select_handshake_fun(unversioned, _greeting_recv[revision_pos], _greeting_recv[minor_pos]))())
         return false;
 
@@ -152,7 +160,8 @@ int zmq::zmtp_engine_t::receive_greeting()
         /**
          * server 端：
          * 1. client 发送的第一条 greeting 消息长度为 10 字节，但是 server 在第一次循环中读取了 10 字节，在第二次循环中读取 2 字节失败，return -1
-         * 2. client 发送的第二条 greeting 消息长度为 64 字节，第一次循环读取 2 字节成功，第二次循环读取 64 - 2 - 10 = 52 字节成功，return unversioned ? 1 : 0;
+         * 2. client 发送的第二条 greeting 消息长度为 64 字节，第一次循环读取 2 字节成功，第二次循环读取 64 - 2 - 10 = 52 字节成功，return unversioned
+         * ? 1 : 0;
          *
          * client 端逻辑类似。
          */
@@ -198,10 +207,14 @@ int zmq::zmtp_engine_t::receive_greeting()
  * 这里需要特别注意的是：ZMTP 的 greeting 消息并不是只有一条，而是类似于三次握手
  *
  * 1. client--->server client 发送给 server 第一条 greeting 消息：消息长度_outsize为 10 字节。消息已经在 plug_internal 中提前构造好了
- * 2. server 收到 greeting 的消息后，会在自己构造出来的 greeting 消息尾部(即第十个字节的位置)增加一个字节(标明主版本号)，发送第一条 greeting 消息给 client，消息长度_outsize为 11 字节
- * 3. client 收到 server 发送过来的长度为 11 字节的 greeting 消息，读取 _greeting_recv[revision_pos]，判断 server 的主版本号。然后构造第二条 greeting 消息（将次版本号写入到消息体的第十一个字节），消息体长度_outsize为 64 字节
- * 4. server 端收到 client 端发送过来的第二条 greeting 消息，但是由于第二条 greeting 消息长度为 64 字节，而 server 端的 _greeting_size 为 12，所以 server 无法全部接收 client 发送的第二条 greeting 消息，只能读取到 12 字节。构造第二条发送给 client 端的 greeting 消息(将次版本号写入到消息体的第一个字节)，消息体长度为 64 字节，同时更新自己的 _greeting_size 为 64
- *    4.1 server 端由于没有全部读取从 client 发送过来的第二条 greeting 消息，所以会第二次触发 EPOLLIN 事件。这次读取的消息长度为 64 字节。至此，server 端已经准备好。
+ * 2. server 收到 greeting 的消息后，会在自己构造出来的 greeting 消息尾部(即第十个字节的位置)增加一个字节(标明主版本号)，发送第一条 greeting 消息给
+ * client，消息长度_outsize为 11 字节
+ * 3. client 收到 server 发送过来的长度为 11 字节的 greeting 消息，读取 _greeting_recv[revision_pos]，判断 server 的主版本号。然后构造第二条 greeting
+ * 消息（将次版本号写入到消息体的第十一个字节），消息体长度_outsize为 64 字节
+ * 4. server 端收到 client 端发送过来的第二条 greeting 消息，但是由于第二条 greeting 消息长度为 64 字节，而 server 端的 _greeting_size 为 12，所以
+ * server 无法全部接收 client 发送的第二条 greeting 消息，只能读取到 12 字节。构造第二条发送给 client 端的 greeting
+ * 消息(将次版本号写入到消息体的第一个字节)，消息体长度为 64 字节，同时更新自己的 _greeting_size 为 64 4.1 server 端由于没有全部读取从 client
+ * 发送过来的第二条 greeting 消息，所以会第二次触发 EPOLLIN 事件。这次读取的消息长度为 64 字节。至此，server 端已经准备好。
  * 5. client 收到 server 端发送过来的第二条 greeting 消息，消息体长度为 64 字节。至此 client 端已准备好。
  *
  * 综上，client 端发送给 server 两条 greeting 消息；server 发送给 client 两条 greeting 消息
@@ -213,8 +226,8 @@ void zmq::zmtp_engine_t::receive_greeting_versioned()
     //  Send the major version number.
     if (_outpos + _outsize == _greeting_send + signature_size)
     {
-        if (_outsize == 0)      // 只有当本端 greeting 数据全部发送完毕之后，_outsize 会被置为0（out_event 中发送数据）
-            set_pollout();      // 重新监听 conn_fd 的可写事件，发送下一条 greeting 消息
+        if (_outsize == 0) // 只有当本端 greeting 数据全部发送完毕之后，_outsize 会被置为0（out_event 中发送数据）
+            set_pollout(); // 重新监听 conn_fd 的可写事件，发送下一条 greeting 消息
         _outpos[_outsize++] = 3; //  Major version number（如果本端 greeting 消息未发送，则发送给对端的第一条 greeting 消息将是 11 字节）
     }
 
@@ -276,7 +289,7 @@ zmq::zmtp_engine_t::handshake_fun_t zmq::zmtp_engine_t::select_handshake_fun(boo
         case 0:
             return &zmtp_engine_t::handshake_v3_0;
         default:
-            return &zmtp_engine_t::handshake_v3_1;
+            return &zmtp_engine_t::handshake_v3_1; // 实例化 _encoder、_decoder、_mechanism
         }
     default:
         return &zmtp_engine_t::handshake_v3_1;
@@ -444,6 +457,7 @@ bool zmq::zmtp_engine_t::handshake_v3_1()
 
 // 连接刚建立的时候，会由 engine 构造一条 routing_id 消息发送给对端socket，由对端socket使用该 routing_id 标记本端 socket，达到路由目的
 // 发送 routing_id_msg 是在 handshake() 之后的
+// 需要注意的是：如果是 zmtp v3_0 或者 v3_1 版本，则不会调用到这里
 int zmq::zmtp_engine_t::routing_id_msg(msg_t *msg_)
 {
     const int rc = msg_->init_size(_options.routing_id_size);
@@ -451,11 +465,12 @@ int zmq::zmtp_engine_t::routing_id_msg(msg_t *msg_)
     // socket 可以使用 zmq_setsockopt 设置 routing_id，如果没有设置，则会发送一条空消息，对端收到之后会生成一个 UUID 来标记本端socket
     if (_options.routing_id_size > 0)
         memcpy(msg_->data(), _options.routing_id, _options.routing_id_size);
-    _next_msg = &zmtp_engine_t::pull_msg_from_session;      // 改变函数指针，进行正常的数据交互
+    _next_msg = &zmtp_engine_t::pull_msg_from_session; // 改变函数指针，进行正常的数据交互
     return 0;
 }
 
 // 如果是 zmtp 协议，则在连接刚建立时，对端socket会发送过来一条 routing_id 的消息，接收到该消息，并为对方建立 UUID（这就是 “信封”）
+// 需要注意的是：如果是 zmtp v3_0 或者 v3_1 版本，则不会调用到这里
 int zmq::zmtp_engine_t::process_routing_id_msg(msg_t *msg_)
 {
     if (_options.recv_routing_id)
@@ -485,7 +500,7 @@ int zmq::zmtp_engine_t::process_routing_id_msg(msg_t *msg_)
         errno_assert(rc == 0);
     }
 
-    _process_msg = &zmtp_engine_t::push_msg_to_session;     // 改变函数指针，进行正常的数据交互
+    _process_msg = &zmtp_engine_t::push_msg_to_session; // 改变函数指针，进行正常的数据交互
 
     return 0;
 }
