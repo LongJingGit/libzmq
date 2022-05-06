@@ -442,7 +442,7 @@ int zmq::socket_base_t::setsockopt(int option_, const void *optval_, size_t optv
     //  If the socket type doesn't support the option, pass it to
     //  the generic option parser.
     rc = options.setsockopt(option_, optval_, optvallen_);
-    update_pipe_options(option_);       // 更新 option 参数（比如 HWM）
+    update_pipe_options(option_); // 更新 option 参数（比如 HWM）
 
     return rc;
 }
@@ -540,7 +540,11 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
     }
 
     //  Process pending commands, if any.
-    int rc = process_commands(0, false); // 其他线程发送给 socket 线程的命令，不会由EPOLL监听，更不会走IO线程的 epoll::loop 的处理流程，消息一直会被放在队列里面，需要 socket 线程主动去读取并处理命令
+    /**
+     * 其他线程发送给 socket 线程的命令，不会由EPOLL监听，更不会走IO线程的 epoll::loop 的处理流程，
+     * 消息一直会被放在队列里面，需要 socket 线程主动去读取并处理命令
+     */
+    int rc = process_commands(0, false);
     if (unlikely(rc != 0))
     {
         return -1;
@@ -654,7 +658,20 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
 
     if (protocol == protocol_name::tcp)
     {
-        // 注意：创建 listener 的时候，将 io_thread 对象传递给了 listener。内部实际将 io_thread 的 tid 赋值给了 listener 的对象，所以后面发送命令的时候如果获取 listener 的 tid 的时候实际上获取的是 io_thread 的 tid。也就是说，发送给 listener 的命令实际上是发送给 io_thread 的
+        /**
+         * 注意：创建 listener 的时候，将 io_thread 对象传递给了 tcp_listener_t，tcp_listener_t 的继承关系如下：
+         *
+         * tcp_listener_t ---> stream_listener_base_t ---> own_t ---> object_t
+         *
+         * 所以最终实际将 io_thread 的 tid 赋值给了 object_t 的对象的 _tid。
+         *
+         * object_t 主要用于发送命令和处理命令，所有继承于 object_t 的子类都具有该功能
+         *
+         * 也就是说，socket 发送给 tcp_listener_t 的命令实际上是发送给 io_thread 的对象的，IO 线程在 epoll 中监听到对应的 EPOLLIN 事件之后，
+         * 在 in_event 中调用对应的处理函数处理该命令
+         *
+         * new tcp_listener_t 实际上是逐个调用了各个基类的构造函数，用于初始化 tid option 等信息
+         */
         tcp_listener_t *listener = new (std::nothrow) tcp_listener_t(io_thread, this, options);
         alloc_assert(listener);
         // set_local_address() 中会调用 ::socket 创建可用于 TCP 通讯的 socket，然后执行 bind/listen 等一系列系统级操作。
@@ -671,7 +688,8 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
 
         // 在这里会 send command 给 IO 线程，将 listener 绑定到 IO 线程。IO 线程会将 listener 含有的句柄加入到 Poller 中，以侦听读写事件。
         // 系统级 服务端接收连接 accept 是在 zmq::tcp_listener_t::in_event 中完成的
-        // send command 从表面上看是发送给 listener 的，但是实际上 listener 的 tid 和 io_thread 的 tid 是同一个，并且 epoll 监听了 io_thread 的 tid，所以发送给 listener 的命令，会触发 io_thread 的 tid 的 EPOLLIN 事件，最终由 io_thread 来处理该命令
+        // send command 从表面上看是发送给 listener 的，但是实际上 listener 的 tid 和 io_thread 的 tid 是同一个，并且 epoll 监听了 io_thread 的
+        // tid，所以发送给 listener 的命令，会触发 io_thread 的 tid 的 EPOLLIN 事件，最终由 io_thread 来处理该命令
         add_endpoint(make_unconnected_bind_endpoint_pair(_last_endpoint), static_cast<own_t *>(listener), NULL);
         options.connected = true;
         return 0;
@@ -710,7 +728,7 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
     {
         ipc_listener_t *listener = new (std::nothrow) ipc_listener_t(io_thread, this, options);
         alloc_assert(listener);
-        int rc = listener->set_local_address(address.c_str());
+        int rc = listener->set_local_address(address.c_str()); // 创建真实的 ipc socket
         if (rc != 0)
         {
             LIBZMQ_DELETE(listener);
@@ -1298,7 +1316,7 @@ int zmq::socket_base_t::send(msg_t *msg_, int flags_)
     msg_->reset_metadata();
 
     //  Try to send the message using method in each socket class
-    rc = xsend(msg_);       // 发送消息，如果有socket 设置了 HWM，则触发 HWM 之后会设置错误码 EAGAIN，并返回 -1
+    rc = xsend(msg_); // 发送消息，如果有socket 设置了 HWM，则触发 HWM 之后会设置错误码 EAGAIN，并返回 -1
     if (rc == 0)
     {
         return 0;
@@ -1343,7 +1361,7 @@ int zmq::socket_base_t::send(msg_t *msg_, int flags_)
         {
             return -1;
         }
-        rc = xsend(msg_);           // 如果上一次 xsend 的时候触发了 EAGAIN，会在这里重新尝试发送消息(前提是没有设置 ZMQ_DONTWAIT 标志位)
+        rc = xsend(msg_); // 如果上一次 xsend 的时候触发了 EAGAIN，会在这里重新尝试发送消息(前提是没有设置 ZMQ_DONTWAIT 标志位)
         if (rc == 0)
             break;
         if (unlikely(errno != EAGAIN))
@@ -1425,7 +1443,7 @@ int zmq::socket_base_t::recv(msg_t *msg_, int flags_)
         }
         _ticks = 0;
 
-        rc = xrecv(msg_);           // 第一次尝试读取消息（但是由于没有绑定 pipe，所以这里读取不到消息）
+        rc = xrecv(msg_); // 第一次尝试读取消息（但是由于没有绑定 pipe，所以这里读取不到消息）
         if (rc < 0)
         {
             return rc;
@@ -1573,7 +1591,7 @@ int zmq::socket_base_t::process_commands(int timeout_, bool throttle_)
 
     //  Check whether there are any commands pending for this thread.
     command_t cmd;
-    int rc = _mailbox->recv(&cmd, timeout_);        // 返回值为 0，说明读取到了命令
+    int rc = _mailbox->recv(&cmd, timeout_); // 返回值为 0，说明读取到了命令
 
     //  Process all available commands.
     while (rc == 0) // 循环读取所有的 pending 命令并执行

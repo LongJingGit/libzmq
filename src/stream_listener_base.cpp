@@ -121,6 +121,9 @@ void zmq::stream_listener_base_t::create_engine(fd_t fd_)
     session_base_t *session = session_base_t::create(io_thread, false, _socket, options, NULL);
     errno_assert(session);
     session->inc_seqnum();
+
+    // 注意：截止目前，如果是 server 端，还没有创建 session 和 socket 通信的 pipe
+
     /**
      * Construct a new launch child object launch_child
      *

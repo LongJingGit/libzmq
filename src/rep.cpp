@@ -85,6 +85,8 @@ int zmq::rep_t::xrecv(msg_t *msg_)
     if (_request_begins)
     {
         // 在这里不断的读取带有 UUID 的消息和空消息，并且将这些消息直接通过 _current_out 发送给对端(可能是 req 或者 router)
+        // 注意：这里的 UUID 消息实际上是由 req/dealer/router 类型的 socket 的 engine 发送的
+        // (具体参考 stream_engine_base_t::next_handshake_command 和 stream_engine_base_t::process_handshake_command)
         while (true)
         {
             int rc = router_t::xrecv(msg_);

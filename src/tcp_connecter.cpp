@@ -164,6 +164,8 @@ void zmq::tcp_connecter_t::start_connecting()
     {
         // 这里需要补充的是：如果马上建立了 tcp 连接，则 server 端的 conn_fd 的 EPOLLOUT 立刻会被触发(对端马上就可以发送数据)
         _handle = add_fd(_s); // 注册 conn_fd 描述符给 epoll(此时还没有注册 conn_fd 的 EPOLLIN 和 EPOLLOUT 事件)
+
+        // 需要注意的是：这里手动触发了 EPOLLOUT 事件，并没有等待 epoll 返回。但是这里触发 EPOLLOUT 事件之后并不从 conn_fd 写入数据，而是创建 engine
         out_event(); // 连接建立，直接写入数据（不用监听 EPOLLOUT 直接发送数据，如果返回的是 EAGAIN，再将 EPOLLOUT 事件加入监听，等待 EPOLLOUT 事件触发之后，再去发送数据，待数据发送完毕，从内核监听队列中删除 EPOLLOUT 事件）
     }
 

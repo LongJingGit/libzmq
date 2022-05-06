@@ -416,7 +416,7 @@ void zmq::session_base_t::process_attach(i_engine *engine_)
     // 如果是 raw_engine_t，则会在这里执行 engine_ready() ; 反之，zmtp_engine_t 不会执行执行 engine_ready
     if (!engine_->has_handshake_stage()) // stream_engine_base_t::has_handshake_stage()
     {
-        engine_ready(); // 创建 session 和 socket 通信的 pipe
+        engine_ready(); // 创建 session 和 socket 通信的 pipe，并发送命令给 socket 绑定该 pipe
     }
 
     //  Plug in the engine.
