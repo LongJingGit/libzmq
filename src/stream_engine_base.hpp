@@ -165,10 +165,12 @@ protected:
      *
      * 2.2 在 stream_engine_base_t::in_event() --> handshake() 中分别接收对端 greeting 消息，双方协商版本号，如果是 zmtp_v3.0 和 v3.1 版本，则会分别指向 next_handshake_command 和 process_handshake_command, handshake() 返回 true;
      *
-     * 2.3 在 next_handshake_command 中, req/dealer/router 类型的 socket 构造 routing_id 消息, 并将消息发送给对端
+     * 2.3 在 next_handshake_command 中, 双方构造一条 routing_id 消息发送给对方:
+     *     2.3.1 req/dealer/router 类型的 socket 构造的这条消息的 name 为 ZMTP_PROPERTY_IDENTITY, 对端收到之后会创建 UUID 标识
+     *     2.3.2 其他类型的 socket 构造的这条消息 name 为默认值，所以对端收到之后并不会创建 UUID
      *
      * 2.4 在 process_handshake_command 中, 做了如下几件事：
-     *     2.4.1 将从内核接收到的 routing_id 消息进行解析
+     *     2.4.1 将从内核接收到的 routing_id 消息进行解析: 如果 name 为 ZMTP_PROPERTY_IDENTITY, 则会创建 UUID; 否则不会创建
      *     2.4.2 创建 session 和 socket 通信的 pipe, 发送命令通知 socket bind 该 pipe, 然后将 routing_id 消息推送给 socket, 由 socket 为对端生成 UUID
      *     2.4.3 将 _next_msg 和 _process_msg 的指向更改为 pull_and_encode 和 write_credential，开始处理正常的用户数据
      *

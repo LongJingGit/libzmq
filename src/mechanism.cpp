@@ -159,7 +159,11 @@ size_t zmq::mechanism_t::add_basic_properties(unsigned char *ptr_, size_t ptr_ca
     //  Add identity (aka routing id) property
     if (options.type == ZMQ_REQ || options.type == ZMQ_DEALER || options.type == ZMQ_ROUTER)
     {
-        // 只有 req/dealer/router 类型的 socket 才会构造 routing_id 消息并发送给对端（rep 类型的 socket 不能发送 routing_id 消息给对端）
+        /**
+         * 如果是 req/dealer/router 类型的 socket, 则该条消息的 name 为 ZMTP_PROPERTY_IDENTITY, 对端接收到这种类型的消息会创建 UUID 用于标识对方.
+         *
+         * 如果是其他类型的消息, 这条消息的 name 不是 ZMTP_PROPERTY_IDENTITY, 对端收到之后并不会创建 UUID
+         */
         ptr += add_property(ptr, ptr_capacity_ - (ptr - ptr_), ZMTP_PROPERTY_IDENTITY, options.routing_id, options.routing_id_size);
     }
 
