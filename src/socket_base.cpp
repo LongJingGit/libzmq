@@ -543,6 +543,8 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
     /**
      * 其他线程发送给 socket 线程的命令，不会由EPOLL监听，更不会走IO线程的 epoll::loop 的处理流程，
      * 消息一直会被放在队列里面，需要 socket 线程主动去读取并处理命令
+     *
+     * socket 的 mailbox_fd 并没有被 epoll 监听, 所以其他线程发送给 socket 线程的 command, 需要 socket 主动读取
      */
     int rc = process_commands(0, false);
     if (unlikely(rc != 0))
