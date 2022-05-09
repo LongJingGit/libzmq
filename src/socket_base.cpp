@@ -411,6 +411,7 @@ void zmq::socket_base_t::attach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool
     _pipes.push_back(pipe_);
 
     //  Let the derived socket type know about new pipe.
+    // 调用的是 dealer_t::xattach_pipe, router_t::attach_pipe
     xattach_pipe(pipe_, subscribe_to_all_, locally_initiated_);
 
     //  If the socket is already being closed, ask any new pipes to terminate
@@ -1134,7 +1135,7 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
 #endif
     pipe_t *newpipe = NULL;
 
-    // 如果 socket 设置了 ZMQ_IMMEDIATE 或者使用的是 UDP 协议，不会在这里创建 pipe 并 attach pipe
+    // 如果 socket 设置了 ZMQ_IMMEDIATE 或者使用的是非 UDP 协议，不会在这里创建 pipe 并 attach pipe
     // 会在 tcp 连接建立之后，才创建的 engine 和 pipe 并发送命令给 socket 绑定 pipe
     if (options.immediate != 1 || subscribe_to_all)
     {

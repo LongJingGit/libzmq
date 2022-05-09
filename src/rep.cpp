@@ -42,6 +42,7 @@ zmq::rep_t::rep_t(class ctx_t *parent_, uint32_t tid_, int sid_)
 
 zmq::rep_t::~rep_t() {}
 
+// rep 发送用户消息. 这里只发送了用户消息，但是实际上在发送该条消息之前在 rep_t::xrecv 中已经向对端发送了一条长度为 0 的空帧
 int zmq::rep_t::xsend(msg_t *msg_)
 {
     //  If we are in the middle of receiving a request, we cannot send reply.
@@ -67,10 +68,9 @@ int zmq::rep_t::xsend(msg_t *msg_)
 
 /**
  * REP在收到消息时会将第一个空帧之前的所有信息保存起来，将原始信息传送给应用程序。
- * 在发送消息时，REP会用刚才保存的信息包裹应答消息。
+ * 在发送消息时，REP会用刚才保存的信息包裹应答消息, 也就是说，发送给对端的消息，会插入一个空帧
  * REP其实是建立在ROUTER之上的，但和REQ一样，必须完成接受和发送这两个动作后才能继续。
  */
-
 int zmq::rep_t::xrecv(msg_t *msg_)
 {
     //  If we are in middle of sending a reply, we cannot receive next request.
@@ -84,9 +84,9 @@ int zmq::rep_t::xrecv(msg_t *msg_)
     //  to the reply pipe.
     if (_request_begins)
     {
-        // 在这里不断的读取带有 UUID 的消息和空消息，并且将这些消息直接通过 _current_out 发送给对端(可能是 req 或者 router)
-        // 注意：这里的 UUID 消息实际上是由 req/dealer/router 类型的 socket 的 engine 发送的
-        // (具体参考 stream_engine_base_t::next_handshake_command 和 stream_engine_base_t::process_handshake_command)
+        /**
+         * routing_id 消息是在 router_t::xattach_pipe 中接收的; 这里接收的是 req socket 在发送真实的用户数据之前构造的空消息
+         */
         while (true)
         {
             int rc = router_t::xrecv(msg_);
@@ -99,7 +99,16 @@ int zmq::rep_t::xrecv(msg_t *msg_)
                 const bool bottom = (msg_->size() == 0);
 
                 //  Push it to the reply pipe.
-                rc = router_t::xsend(msg_);         // 将带有 UUID 的消息和空消息直接发送出去
+                /**
+                 * 将带有 UUID 的消息和空消息直接发送出去, 目的是什么?
+                 * 1. router_t::xsend 发送带有 UUID 的消息，目的是为了寻找 out_pipe , 这条 UUID 消息实际上并没有发送给对端
+                 * 2. "空消息" 会通过 out_pipe 发送给对端
+                 * 3. 当 rep/router 发送消息时，可以使用该 out_pipe 将 "空消息" 和 "用户消息" 发送给对端
+                 *
+                 * 注意:
+                 * out_pipe 实际上对应的是 router::identify_peer() 中保存起来的输出 pipe
+                 */
+                rc = router_t::xsend(msg_);
                 errno_assert(rc == 0);
 
                 if (bottom)

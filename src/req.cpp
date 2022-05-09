@@ -53,8 +53,6 @@ zmq::req_t::~req_t() {}
 /**
  * REQ发送消息时会在消息顶部插入一个空帧，接收时会将空帧移去。其实 REQ 是建立在 DEALER 之上的，但REQ只有当消息发送并接受到回应后才能继续运行。
  */
-
-// req 在发送消息时会在消息顶部插入一个空帧，接收时会将空帧移去
 int zmq::req_t::xsend(msg_t *msg_)
 {
     //  If we've sent a request and we still haven't got the reply,
@@ -140,6 +138,7 @@ int zmq::req_t::xsend(msg_t *msg_)
     return 0;
 }
 
+// req 接收消息时会先接收一个空帧，该空帧不会被递交给用户
 int zmq::req_t::xrecv(msg_t *msg_)
 {
     //  If request wasn't send, we can't wait for reply.
@@ -172,6 +171,7 @@ int zmq::req_t::xrecv(msg_t *msg_)
             }
         }
 
+        // 读取到的第一帧消息一定是对端发送过来的大小为 0 的空消息，这条消息不会递交给上层用户
         //  The next frame must be 0.
         // TODO: Failing this check should also close the connection with the peer!
         int rc = recv_reply_pipe(msg_);
@@ -192,6 +192,7 @@ int zmq::req_t::xrecv(msg_t *msg_)
         _message_begins = false;
     }
 
+    // 在这里接收真实的用户消息, 并递交给用户
     const int rc = recv_reply_pipe(msg_);
     if (rc != 0)
         return rc;
@@ -268,7 +269,7 @@ int zmq::req_t::recv_reply_pipe(msg_t *msg_)
     while (true)
     {
         pipe_t *pipe = NULL;
-        const int rc = dealer_t::recvpipe(msg_, &pipe);     // 收到的大小为 0 的消息，是第一帧用来寻找路由的消息 bottom
+        const int rc = dealer_t::recvpipe(msg_, &pipe);
         if (rc != 0)
             return rc;
         if (!_reply_pipe || pipe == _reply_pipe)

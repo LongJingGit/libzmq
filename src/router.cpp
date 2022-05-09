@@ -75,11 +75,19 @@ zmq::router_t::~router_t()
  */
 
 /**
- * 如果 router 做客户端，会在 socket_base_t::connect --> xattach_pipe，但是在这里 routing_id_ok 会为 false(因为还没读取到对端发送过来的空消息，无法生成 UUID)，所以不会 _fq.attach(pipe_)。当连接完全建立之后，对端会发送空消息，然后 router 在 router_t::xread_activated 中读取空消息，为对端生成 UUID 标识，并执行 _fq.attach(pipe_)
+ * 1) router/rep 做客户端
+ * 在 socket_base_t::connect --> xattach_pipe，但是在这里 routing_id_ok 会为 false(因为还没读取到对端发送过来的 routing_id 消息，无法生成 UUID),
+ * 所以不会 _fq.attach(pipe_)。当连接完全建立之后，对端会发送空消息，然后 router 在 router_t::xread_activated 中读取空消息，为对端生成 UUID 标识，
+ * 并执行 _fq.attach(pipe_)
  *
- * 如果 router 做服务端，会在连接建立之后，session_base_t::engine_ready 创建 pipe，并给 socket 发送 bind 命令。socket 在 zmq_recv 的时候会处理该命令，然后读取对端发送过来的空消息，并为其生成 UUID
+ * 2) router/rep 做服务端
+ * engine 在 handshanke 成功之后, 接收到对端的 routing_id 消息, 然后在 engine 中创建 pipe, 并给 socket 发送 bind 命令.
+ * rep/router socket 在 zmq_recv 的时候会处理该命令:
  *
- * 注意：rep 继承于 router
+ * socket_base_t::process_commands --> socket_base_t::process_bind --> socket_base_t::attach_pipe --> router_t::xattach_pipe
+ *
+ * 然后在 identify_peer() 中读取对端发送过来的 routing_id 消息，并为其生成 UUID
+ *
  */
 void zmq::router_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool locally_initiated_)
 {
@@ -104,8 +112,9 @@ void zmq::router_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool loc
         errno_assert(rc == 0);
     }
 
-    const bool routing_id_ok = identify_peer(pipe_, locally_initiated_);    // 识别对端 routing_id（会读取消息）
-    if (routing_id_ok)  // 如果对端确实发送了空消息或者含有 routing_id 的消息（连接刚建立之后，zmtp_engine 会发送 routing_id 的消息给 router 生成 UUID，用于标识对方 socket）
+    // 读取对端发送过来的 routing_id 消息(由对端 engine 构造并发送), 然后为对端 socket 创建 UUID
+    const bool routing_id_ok = identify_peer(pipe_, locally_initiated_);
+    if (routing_id_ok)
         _fq.attach(pipe_);
     else
         _anonymous_pipes.insert(pipe_);
@@ -392,15 +401,19 @@ int zmq::router_t::xrecv(msg_t *msg_)
         //  We are at the beginning of a message.
         //  Keep the message part we have in the prefetch buffer
         //  and return the ID of the peer instead.
-        rc = _prefetched_msg.move(*msg_);       // 保存接收到的消息，然后将 UUID 返回给用户，标记消息来源（第二次调用 recv 才返回这次接收到的消息）
+        /**
+         * 保存此次接收到的消息 msg_ 消息到 _prefetched_msg 中, 用 routing_id 构造一条新消息, 返回给上层;
+         * 第二次调用 xrecv 时才会将 _prefetched_msg 返回给上层
+         */
+        rc = _prefetched_msg.move(*msg_);
         errno_assert(rc == 0);
         _prefetched = true;
-        _current_in = pipe;     // 接收到对端发送过来的空消息，会用来寻找 pipe，然后用该 pipe 接收剩下的真实的用户消息
+        _current_in = pipe;
 
-        const blob_t &routing_id = pipe->get_routing_id();      // pipe 的 UUID 已经在 identify_peer 调用中保存下来了
+        const blob_t &routing_id = pipe->get_routing_id();      // pipe 的 UUID 已经在 identify_peer() 调用中保存下来了
         rc = msg_->init_size(routing_id.size());
         errno_assert(rc == 0);
-        memcpy(msg_->data(), routing_id.data(), routing_id.size());     // 将 routing_id 作为消息返回给用户
+        memcpy(msg_->data(), routing_id.data(), routing_id.size());     // 用 routing_id 构造新的消息返回给
         msg_->set_flags(msg_t::more);
         if (_prefetched_msg.metadata())
             msg_->set_metadata(_prefetched_msg.metadata());
