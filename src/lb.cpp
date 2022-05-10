@@ -48,7 +48,7 @@ zmq::lb_t::~lb_t()
 /**
  * socket 和 session 的通信管道建立完成之后就会执行到这里
  *
- * socket 做服务端：server 和 client 连接完全建立之后，会创建 pipe 并发送命令给 socket attach pipe
+ * socket 做服务端：server 和 client 连接完全建立之后，会创建 pipe 并发送命令给 socket attach pipe. socket 在发送或者接收数据之前会 process_bind
  * socket 做客户端：client 执行 zmq_connect 的时候就会创建 pipe，然后执行 attach
  */
 void zmq::lb_t::attach(pipe_t *pipe_)

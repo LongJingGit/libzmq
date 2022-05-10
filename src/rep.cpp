@@ -42,7 +42,7 @@ zmq::rep_t::rep_t(class ctx_t *parent_, uint32_t tid_, int sid_)
 
 zmq::rep_t::~rep_t() {}
 
-// rep 发送用户消息. 这里只发送了用户消息，但是实际上在发送该条消息之前在 rep_t::xrecv 中已经向对端发送了一条长度为 0 的空帧
+// rep 发送用户消息. 这里只发送了用户消息，但是实际上在发送该条消息之前在 rep_t::xrecv 中已经向对端发送了包含空帧在内的第一帧空帧之前的所有数据
 int zmq::rep_t::xsend(msg_t *msg_)
 {
     //  If we are in the middle of receiving a request, we cannot send reply.
@@ -67,9 +67,8 @@ int zmq::rep_t::xsend(msg_t *msg_)
 }
 
 /**
- * REP在收到消息时会将第一个空帧之前的所有信息保存起来，将原始信息传送给应用程序。
- * 在发送消息时，REP会用刚才保存的信息包裹应答消息, 也就是说，发送给对端的消息，会插入一个空帧
- * REP其实是建立在ROUTER之上的，但和REQ一样，必须完成接受和发送这两个动作后才能继续。
+ * rep 在收到消息时会将第一个空帧之前的所有信息保存起来(直接使用 router::xsend 接口发送给对端)，将原始信息传送给应用程序。
+ * rep 其实是建立在 router 之上的，但和 req 一样，必须完成接受和发送这两个动作后才能继续。
  */
 int zmq::rep_t::xrecv(msg_t *msg_)
 {
@@ -84,11 +83,15 @@ int zmq::rep_t::xrecv(msg_t *msg_)
     //  to the reply pipe.
     if (_request_begins)
     {
-        /**
-         * routing_id 消息是在 router_t::xattach_pipe 中接收的; 这里接收的是 req socket 在发送真实的用户数据之前构造的空消息
-         */
         while (true)
         {
+            /**
+             * 读取第一个空帧之前的所有信息，然后通过 router::xsend 接口发送出去. 这些消息可能是:
+             * 1. routing_id + 空帧. routing_id 用来寻找发送路由，实际并没有发送给对端, 空帧会被发送给对端
+             * 2. routing_id + routing_id + 空帧. 第一个 routing_id 用来寻找发送路由, 实际并没有发送给对端, 但是第二个 routing_id 和 空帧 真实的发送给对端
+             *
+             * 注意: 第一个 routing_id 消息是 router 使用在 router::identify_peer() 中接收到的 routing_id 消息构造出来的
+             */
             int rc = router_t::xrecv(msg_);
             if (rc != 0)
                 return rc;
@@ -96,18 +99,9 @@ int zmq::rep_t::xrecv(msg_t *msg_)
             if ((msg_->flags() & msg_t::more))
             {
                 //  Empty message part delimits the traceback stack.
-                const bool bottom = (msg_->size() == 0);
+                const bool bottom = (msg_->size() == 0);        // 判断该消息是否是空帧，知道读取到空帧为止
 
                 //  Push it to the reply pipe.
-                /**
-                 * 将带有 UUID 的消息和空消息直接发送出去, 目的是什么?
-                 * 1. router_t::xsend 发送带有 UUID 的消息，目的是为了寻找 out_pipe , 这条 UUID 消息实际上并没有发送给对端
-                 * 2. "空消息" 会通过 out_pipe 发送给对端
-                 * 3. 当 rep/router 发送消息时，可以使用该 out_pipe 将 "空消息" 和 "用户消息" 发送给对端
-                 *
-                 * 注意:
-                 * out_pipe 实际上对应的是 router::identify_peer() 中保存起来的输出 pipe
-                 */
                 rc = router_t::xsend(msg_);
                 errno_assert(rc == 0);
 

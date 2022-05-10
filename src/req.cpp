@@ -95,7 +95,6 @@ int zmq::req_t::xsend(msg_t *msg_)
         int rc = bottom.init();
         errno_assert(rc == 0);
         // 注意，发送消息的第一帧是 req 内部构造出来的 bottom，大小为 0，并且设置了 msg_t::more（表示后面还有消息：用户需要发送的消息）
-        // 这一帧空消息是为了请求 routing_id ，为了让对端确认接收的 pipe 的。（具体实现可参考 router.cpp）
         bottom.set_flags(msg_t::more);
         // 发送第一帧消息，并获取 _reply_pipe（注意：虽然 _reply_pipe == nullptr，但是 &_reply_pipe != nullptr）
         rc = dealer_t::sendpipe(&bottom, &_reply_pipe);

@@ -213,6 +213,12 @@ void zmq::router_t::xread_activated(pipe_t *pipe_)
     }
 }
 
+/**
+ * 如果用 router 做发送端，将消息发送给 dealer 时，必须手动建立一个信封(即发送的第一帧必须是 dealer 的 ROUTING_ID),
+ * router 在发送时会移除第一帧(这一帧是用来寻找路由的)，只将第二帧的内容传递给 dealer
+ *
+ * 参考 demo: test_spec_router::test_destroy_queue_on_disconnect
+ */
 int zmq::router_t::xsend(msg_t *msg_)
 {
     //  If this is the first part of the message it's the ID of the
@@ -331,6 +337,10 @@ int zmq::router_t::xsend(msg_t *msg_)
     return 0;
 }
 
+/**
+ * 1. 如果用 router 做接收端接收消息时，会在顶部添加一个信封 routing_id，标记消息的来源(参考demo: test_spec_router::test_fair_queue_in)
+ * 2. 如果是 rep 接收对端消息，rep_t::xrecv 会先调用 router::xrecv 读取空帧
+ */
 int zmq::router_t::xrecv(msg_t *msg_)
 {
     if (_prefetched)
