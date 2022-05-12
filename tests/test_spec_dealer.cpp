@@ -65,7 +65,7 @@ void test_round_robin_out (const char *bind_address_)
     zmq_msg_init (&msg);
 
     for (size_t peer = 0; peer < services; ++peer)
-        s_recv_seq (rep[peer], "ABC", SEQ_END);     // REP 要求接收到的消息的信封以一个空帧结束
+        s_recv_seq (rep[peer], "ABC", SEQ_END); // rep 会接收到两帧消息: 空帧 + "ABC", 但是空帧不会递交给用户
 
     TEST_ASSERT_SUCCESS_ERRNO (zmq_msg_close (&msg));
 
@@ -200,7 +200,7 @@ TEST_CASES (tcp, "tcp://127.0.0.1:*")
 
 int main (void)
 {
-    setup_test_environment (6000);
+    setup_test_environment (60000);
 
     UNITY_BEGIN ();
 
@@ -208,7 +208,7 @@ int main (void)
     // RUN_TEST (test_fair_queue_in_inproc);
     // RUN_TEST (test_block_on_send_no_peers_inproc);
 
-    // RUN_TEST (test_round_robin_out_tcp);
+    RUN_TEST (test_round_robin_out_tcp);
     RUN_TEST (test_fair_queue_in_tcp);
     // RUN_TEST (test_block_on_send_no_peers_tcp);
 

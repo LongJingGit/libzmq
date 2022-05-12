@@ -32,11 +32,6 @@
 
 SETUP_TEARDOWN_TESTCONTEXT
 
-/**
- * @brief 请求--应答     1 --> N 模式           N --> 1 模式
- *
- * 请求应答模式的特点：REQ 发起请求，必须等到 REP 的响应之后，REQ 才可以发送第二条请求
- */
 char connect_address[MAX_SOCKET_STRING];
 
 void test_round_robin_out (const char *bind_address_)
@@ -56,46 +51,10 @@ void test_round_robin_out (const char *bind_address_)
         TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (rep[peer], connect_address));
     }
 
-    /**
-     * @brief 信封的生成过程：
-     * 1. connect 成功之后，触发 req 的 EPOLLOUT 事件，req 会在 out_event() 中构造一条 routing_id 的消息发送给 rep
-     * 2. rep 触发 EPOLLIN 事件，在 in_event() 中接收该 routing_id 的消息并递交给 rep socket，然后给 rep socket 发送 activate_read 命令读取该消息
-     * 3. 当 rep 在调用 recv 接收真实的用户消息之前，会先处理 pending 的命令。比如处理 activate_read 命令：读取 routing_id 消息，然后在 xread_activated 中接收该消息并为对端生成 UUID 标识
-     *
-     * 具体的代码可以参考 stream_engine_base_t::out_event() 和 stream_engine_base_t::in_event()
-     */
-
     //  We have to give the connects time to finish otherwise the requests
     //  will not properly round-robin. We could alternatively connect the
     //  REQ sockets to the REP sockets.
     msleep (SETTLE_TIME);
-
-    // s_send_seq (req, "ABC", SEQ_END);
-    // s_recv_seq (rep[0], "ABC", SEQ_END);
-    // s_send_seq (req, "ABC", SEQ_END);            // REQ 没有收到 REP 的响应，所以无法发送第二条请求
-
-    // REQ 发送多帧消息，则需要使用 ZMQ_SNDMORE（参考 test_reqrep_device.cpp）
-    // send_string_expect_success (req, "ABC", ZMQ_SNDMORE);
-    // send_string_expect_success (req, "DEF", 0);
-
-    // recv_string_expect_success (rep[0], "ABC", 0);
-    // recv_string_expect_success (rep[0], "DEF", 0);
-
-    /**
-     * req 和 rep 连接刚建立起来的时候，req 就会发送一条空消息给 rep(rep 继承于 router)，该空消息用于生成 UUID。
-     *
-     * rep 收到该空消息之后，由 engine 读取该消息，并由 session 将消息写入到和 socket 通信的管道，然后发送命令给 socket，
-     *
-     * rep 在接收消息前，会先处理 pending 的命令。该 pending 命令就是 session 发送过来的命令，然后激活 rep 的 read,
-     *
-     * rep 读取空消息，并为该管道生成特定的 UUID，用于标识对端的 socket
-     */
-    // s_recv_seq (rep[0], "ABC", SEQ_END);     // 会在 router_t::xread_activated 中接收发送过来的空消息，然后生成 UUID
-
-    /**
-     * req 发送请求的时候，会先发送一条长度为 0 的空消息给对端，该空消息为了请求 routing_id；然后再发送正常的用户消息
-     * rep 接收到消息也是先接收到空消息(直接转发给对端)，然后接收正常的用户消息
-     */
 
     // Send our peer-replies, and expect every REP it used once in order
     for (size_t peer = 0; peer < services; peer++)
@@ -113,6 +72,7 @@ void test_round_robin_out (const char *bind_address_)
     }
 }
 
+// rep 连接多个 router. 实际应用中并不推荐这么做
 void test_req_only_listens_to_current_peer (const char *bind_address_)
 {
     void *req = test_context_socket (ZMQ_REQ);
@@ -171,6 +131,7 @@ void test_req_only_listens_to_current_peer (const char *bind_address_)
         test_context_socket_close_zero_linger (router[i]);
 }
 
+// rep ---> router
 void test_req_message_format (const char *bind_address_)
 {
     void *req = test_context_socket (ZMQ_REQ);
@@ -186,9 +147,25 @@ void test_req_message_format (const char *bind_address_)
     // Send a multi-part request.
     s_send_seq (req, "ABC", "DEF", SEQ_END);
 
+    /**
+     * rep 发送了三帧消息
+     * 1. 空帧
+     * 2. ABC
+     * 3. DEF
+     */
+
+    /**
+     * router 接收到四帧消息:
+     * 1. routing_id
+     * 2. 空帧
+     * 3. ABC
+     * 4. DEF
+     */
+
     zmq_msg_t msg;
     zmq_msg_init (&msg);
 
+    // 接收 routing_id 消息
     // Receive peer routing id
     TEST_ASSERT_SUCCESS_ERRNO (zmq_msg_recv (&msg, router, 0));
     TEST_ASSERT_GREATER_THAN_INT (0, zmq_msg_size (&msg));
@@ -202,14 +179,17 @@ void test_req_message_format (const char *bind_address_)
       zmq_getsockopt (router, ZMQ_RCVMORE, &more, &more_size));
     TEST_ASSERT_TRUE (more);
 
+    // 接收空帧 + ABC + DEF
     // Receive the rest.
     s_recv_seq (router, 0, "ABC", "DEF", SEQ_END);
 
+    // router 作为发送端时，发送的第一帧必须是对端的 routing_id，这一帧是用来寻找发送路由的, 并不会实际发送给对端
     // Send back a single-part reply.
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_msg_send (&peer_id_msg, router, ZMQ_SNDMORE));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_msg_send (&peer_id_msg, router, ZMQ_SNDMORE));
+    // router 发送 空帧 + GHI
     s_send_seq (router, 0, "GHI", SEQ_END);
 
+    // req 接收到 空帧 + GHI, 但是 req 会移除这个空帧，并不会递交给上层, 所以 req 只收到 GHI
     // Receive reply.
     s_recv_seq (req, "GHI", SEQ_END);
 

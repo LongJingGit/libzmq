@@ -36,18 +36,6 @@ SETUP_TEARDOWN_TESTCONTEXT
 
 char connect_address[MAX_SOCKET_STRING];
 
-/**
- * @brief 数据流模型：
- *
- *          rep(server)       ---->        req(client)
- *
- * 1. 作为服务端的 rep，在客户端 req 完全连接上来之后，rep 才会创建 pipe 并且执行 socket attach pipe 的指令
- * 2. 作为客户端的 req，在调用 zmq_connect 的时候就会执行 attach pipe。
- *
- * req 和 rep 的连接完全建立之后，req 的 EPOLLOUT 事件触发，会在 out_event() 中发送 routing_id 的消息给对端，由 rep 生成 UUID 标识消息的来源
- *
- * 需要注意的是：req 发送命令，rep 接收命令。（rep 在接收到命令之前不会主动发送命令）
- */
 void test_fair_queue_in (const char *bind_address_)
 {
     void *rep = test_context_socket (ZMQ_REP);
@@ -63,8 +51,6 @@ void test_fair_queue_in (const char *bind_address_)
 
         TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (reqs[peer], connect_address));
     }
-
-    // connect 成功之后，req 就会发送 routing_id 的消息
 
     msleep (SETTLE_TIME);
 
@@ -119,10 +105,10 @@ void test_envelope (const char *bind_address_)
     TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (dealer, connect_address));
 
     // minimal envelope
-    s_send_seq (dealer, 0, "A", SEQ_END);
-    s_recv_seq (rep, "A", SEQ_END);
-    s_send_seq (rep, "A", SEQ_END);
-    s_recv_seq (dealer, 0, "A", SEQ_END);
+    s_send_seq (dealer, 0, "A", SEQ_END);       // 发送两帧消息: 空帧 + "A". (dealer 做发送端, 需要发送空帧给对端)
+    s_recv_seq (rep, "A", SEQ_END);             // 接收到两帧消息: 空帧 + "A". 空帧会通过 router::xsend 直接发送给对端，不会递交给用户
+    s_send_seq (rep, "A", SEQ_END);             // 发送消息 "A"
+    s_recv_seq (dealer, 0, "A", SEQ_END);       // 接收两帧消息: 空帧 + "A"
 
     // big envelope
     s_send_seq (dealer, "X", "Y", 0, "A", SEQ_END);
@@ -159,7 +145,7 @@ void test_envelope_tcp ()
 
 int main ()
 {
-    setup_test_environment ();
+    setup_test_environment (60000);
 
     UNITY_BEGIN ();
 

@@ -75,35 +75,20 @@ void test_roundtrip ()
     //  Send a request.
     /**
      * req 会发送三帧消息（内部队列中可验证）：
-     * 1. 长度为 0 的空消息：req 使用 send 发送消息，但是在发送用户数据之前，会先发送一条长度为 0 的空消息，在 req socket 内部构造的，具体参考 req.cpp
+     * 1. 长度为 0 的空帧：req 使用 send 发送消息，但是在发送用户数据之前，会先发送一条长度为 0 的空消息，在 req socket 内部构造的，具体参考 req.cpp
      * 2. 用户消息："ABC"
      * 3. 用户消息："DEF"
      */
     send_string_expect_success (req, "ABC", ZMQ_SNDMORE);     // req 发送消息给 router
     send_string_expect_success (req, "DEF", 0);       // 发送多帧消息时，只有当最后一条消息提交发送了，整个消息才会被发送
 
-    /**
-     * req 和 router 的连接建立完成之后，双方会在 out_event() 和 in_event() 中构造一条 routing_id 消息，发送给对端，由对端生成 UUID。
-     * 具体的代码可以参考 stream_engine_base_t::out_event() 和 stream_engine_base_t::in_event() 中关于 _next_msg 和 _process_msg 两个函数指针指向的注释说明
-     *
-     * 如果对端 socket 没有设置套接字标识 routing_id，则会发送长度为 0 的空消息，由本端 socket 生成一个 UUID 来标识对端 socket;
-     * 如果对端 socket 使用 zmq_setsockopt 设置了套接字标识 routing_id，则本端 socket 收到之后会用该 routing_id 来标记对方。
-     *
-     */
-
     //  Pass the request through the device.
     /**
      * router 收到四帧消息：
-     * 1. 信封：ROUTER 套接字接收到每一帧消息之后，会在头部添加一个信封(该信封是对端 engine 发送过来的)，标记消息的来源，发送时会通过该信封决定哪个节点可以接收到该消息
-     * 2. 空消息：由 REQ 套接字发送给 ROUTER 真实的用户消息之前发送的
+     * 1. routing_id
+     * 2. 空帧：由 REQ 套接字发送给 ROUTER 真实的用户消息之前发送的
      * 3. 用户消息: "ABC"
-     * 4. 用户消息: "ABC"
-     *
-     * 也可以按照下面的方式理解：router 会接收到三帧消息，但是需要 recv 四次：
-     * 1. req 请求 routing_id 的消息（对应着 req 发送的第一条消息，接收到的消息大小为 0，但是 router 接收到该消息之后，会单独保存该消息，然后将自动生成的 UUID 放到 msg 里面，返回给用户，此时消息大小为 5。也就是说，第一次接收到的消息实际上是 包含着 UUID 的消息，用于标记消息来源）
-     * 2. 第二次接收到的是空消息（第一次接收到消息之后保存下来，然后由第二次 recv）
-     * 3. "ABC"
-     * 4. "DEF"
+     * 4. 用户消息: "DEF"
      */
     for (int i = 0; i != 4; i++)
     {
@@ -116,7 +101,22 @@ void test_roundtrip ()
         TEST_ASSERT_SUCCESS_ERRNO (zmq_msg_send (&msg, dealer, rcvmore ? ZMQ_SNDMORE : 0));      // dealer 发送消息给 rep
     }
 
-    // rep 在接收消息的时候，会直接将 带有 UUID 的消息和空消息发送给 ROUTER（也就是说，带有 UUID 的消息和空消息不会递交给上层应用）
+    /**
+     * dealer 发送了四条消息:
+     * 1. routing_id
+     * 2. 空帧
+     * 3. ABC
+     * 4. DEF
+     */
+
+    /**
+     * rep 接收到五条消息:
+     * 1. routing_id: 这条消息是 router 使用 routing_id 构造出来的. 该消息在 rep_t::xrecv()-->router_t::xsend() 中用来寻找发送路由，并不会实际发送给对端
+     * 2. routing_id: 该消息在 rep_t::xrecv()-->router_t::xsend 中被发送给了对端, 不会递交给上层
+     * 3. 空帧: 该消息在 rep_t::xrecv()-->router_t::xsend 中被发送给了对端, 不会递交给上层
+     * 4. ABC
+     * 5. DEF
+     */
 
     //  Receive the request.
     recv_string_expect_success (rep, "ABC", 0);
@@ -130,9 +130,25 @@ void test_roundtrip ()
 
     /************************************************/
 
+    /**
+     * rep 发送了四条消息:
+     * 1. routing_id: rep_t::xrecv()-->router_t::xsend() 中被发送给了对端
+     * 2. 空帧: rep_t::xrecv()-->router_t::xsend() 中被发送给了对端
+     * 3. GHI
+     * 4. JKL
+     */
+
     //  Send the reply.
     send_string_expect_success (rep, "GHI", ZMQ_SNDMORE);
     send_string_expect_success (rep, "JKL", 0);
+
+    /**
+     * dealer 收到了四条消息：
+     * 1. routing_id
+     * 2. 空帧
+     * 3. GHI
+     * 4. JKL
+     */
 
     //  Pass the reply through the device.
     for (int i = 0; i != 4; i++)
@@ -145,6 +161,21 @@ void test_roundtrip ()
         TEST_ASSERT_SUCCESS_ERRNO (zmq_getsockopt (dealer, ZMQ_RCVMORE, &rcvmore, &sz));
         TEST_ASSERT_SUCCESS_ERRNO (zmq_msg_send (&msg, router, rcvmore ? ZMQ_SNDMORE : 0));
     }
+
+    /**
+     * 通过 router 将 dealer 收到的四条消息发送给 req
+     * 1. routing_id: 是用来寻找路由的，并不是真实的发送出去
+     * 2. 空帧
+     * 3. GHI
+     * 4. JKL
+     */
+
+    /**
+     * req 收到了 router 发送过来的三条消息:
+     * 1. 空帧: 该帧不会被递交给用户
+     * 2. GHI
+     * 3. JKL
+     */
 
     //  Receive the reply.
     recv_string_expect_success (req, "GHI", 0);
@@ -163,7 +194,7 @@ void test_roundtrip ()
 
 int main ()
 {
-    setup_test_environment (6000);
+    setup_test_environment (60000);
 
     UNITY_BEGIN ();
     RUN_TEST (test_roundtrip);

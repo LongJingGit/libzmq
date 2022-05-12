@@ -67,8 +67,8 @@ void test_fair_queue_in (const char *bind_address_)
     zmq_msg_t msg;
     TEST_ASSERT_SUCCESS_ERRNO (zmq_msg_init (&msg));
 
-    s_send_seq (senders[0], "M", SEQ_END);
-    s_recv_seq (receiver, "A", "M", SEQ_END);
+    s_send_seq (senders[0], "M", SEQ_END);      // 发送一帧消息: "M"
+    s_recv_seq (receiver, "A", "M", SEQ_END);   // 接收到两帧消息: routing_id 为 A 的信封和 消息内容为 M 的实际用户消息
 
     s_send_seq (senders[0], "M", SEQ_END);
     s_recv_seq (receiver, "A", "M", SEQ_END);
@@ -133,7 +133,7 @@ void test_destroy_queue_on_disconnect (const char *bind_address_)
     msleep (SETTLE_TIME);
 
     // Send a message in both directions
-    s_send_seq (a, "B", "ABC", SEQ_END);
+    s_send_seq (a, "B", "ABC", SEQ_END);    // router 发送的时候发送了两帧消息: 第一帧是用来寻找路由的 routing_id 消息 "B"; 第二帧是用户消息 "ABC"
     s_send_seq (b, "DEF", SEQ_END);
 
     TEST_ASSERT_SUCCESS_ERRNO (zmq_disconnect (b, connect_address));
@@ -180,13 +180,13 @@ TEST_SUITE (tcp, "tcp://127.0.0.1:*")
 
 int main ()
 {
-    setup_test_environment ();
+    setup_test_environment (60000);
 
     UNITY_BEGIN ();
     RUN_TEST (test_fair_queue_in_tcp);
     // RUN_TEST (test_fair_queue_in_inproc);
     // TODO commented out until libzmq implements this properly
-    // RUN_TEST (test_destroy_queue_on_disconnect_tcp);
+    RUN_TEST (test_destroy_queue_on_disconnect_tcp);
     // RUN_TEST (test_destroy_queue_on_disconnect_inproc);
     return UNITY_END ();
 }
