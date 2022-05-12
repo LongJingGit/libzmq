@@ -214,10 +214,12 @@ void zmq::router_t::xread_activated(pipe_t *pipe_)
 }
 
 /**
- * 如果用 router 做发送端，将消息发送给 dealer 时，必须手动建立一个信封(即发送的第一帧必须是 dealer 的 ROUTING_ID),
- * router 在发送时会移除第一帧(这一帧是用来寻找路由的)，只将第二帧的内容传递给 dealer
+ * 如果用 router 做发送端，将消息发送给 dealer/req/router 时, 发送的第一帧必须是对端的 routing_id, 这一帧是用来寻找发送路由的, 并没有实际发送出去.
+ * router 在发送时会移除第一帧, 只将后面的消息发送给对端
  *
- * 参考 demo: test_spec_router::test_destroy_queue_on_disconnect
+ * 参考 demo:
+ * 1. test_spec_router::test_destroy_queue_on_disconnect
+ * 2. test_spec_req::test_req_message_format
  */
 int zmq::router_t::xsend(msg_t *msg_)
 {
