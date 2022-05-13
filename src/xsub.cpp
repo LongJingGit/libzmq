@@ -68,7 +68,6 @@ void zmq::xsub_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool local
     _dist.attach(pipe_);
 
     //  Send all the cached subscriptions to the new upstream peer.
-    // 发送订阅消息给对端（这时只是发送给了和 session 通信的管道，并没有发送给对端 socket）
     _subscriptions.apply(send_subscription, pipe_);
     pipe_->flush();
 }
@@ -131,10 +130,9 @@ int zmq::xsub_t::xsend(msg_t *msg_)
     }
 
     /**
-     * @brief 如果是订阅消息，则需要进行相应的处理
-     * 对订阅消息的判断：
+     * 判断是否是订阅消息:
      *  1. 设置标志位(is_subscribe() 返回 true)，该标志位可能是在 sub_t::xsetsockopt 中调用 msg.init_subscribe 设置的
-     *  2. msg 的数据包 size 大于 0 且 数据内容为 1
+     *  2. 消息内容的第一个字节为 1 且消息长度大于 0
      */
     if (msg_->is_subscribe() || (size > 0 && *data == 1))
     {

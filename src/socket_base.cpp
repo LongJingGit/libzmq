@@ -411,7 +411,7 @@ void zmq::socket_base_t::attach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool
     _pipes.push_back(pipe_);
 
     //  Let the derived socket type know about new pipe.
-    // 调用的是 dealer_t::xattach_pipe, router_t::attach_pipe
+    // 调用的是 dealer_t::xattach_pipe, router_t::xattach_pipe 或者各个 socket 的 xattach_pipe
     xattach_pipe(pipe_, subscribe_to_all_, locally_initiated_);
 
     //  If the socket is already being closed, ask any new pipes to terminate
@@ -915,7 +915,7 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
             //  Attach remote end of the pipe to the peer socket. Note that peer's
             //  seqnum was incremented in find_endpoint function. We don't need it
             //  increased here.
-            // 绑定 pipes[1] 给对端的 socket
+            // 发送命令给对端 socket, bind pipe. 对端在 send/recv 之前会先处理 pending 命令
             send_bind(peer.socket, new_pipes[1], false);
         }
 
@@ -1135,8 +1135,8 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
 #endif
     pipe_t *newpipe = NULL;
 
-    // 如果 socket 设置了 ZMQ_IMMEDIATE 或者使用的是非 UDP 协议，不会在这里创建 pipe 并 attach pipe
-    // 会在 tcp 连接建立之后，才创建的 engine 和 pipe 并发送命令给 socket 绑定 pipe
+    // 如果使用的是 UDP 协议或者 socket 没有设置 ZMQ_IMMEDIATE 选项为 1, 则会在 connect 的时候创建 pipe 并且 attach
+    // immediate 参数在构造函数中初始化成了 0
     if (options.immediate != 1 || subscribe_to_all)
     {
         //  Create a bi-directional pipe.

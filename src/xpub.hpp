@@ -75,10 +75,14 @@ class xpub_t : public socket_base_t
     static void mark_as_matching (zmq::pipe_t *pipe_, xpub_t *self_);
 
     //  List of all subscriptions mapped to corresponding pipes.
-    mtrie_t _subscriptions;     // 需要订阅的消息的列表
+    mtrie_t _subscriptions;     // 映射到相应 pipe 的所有订阅列表
+
+    /**
+     * pipe 和订阅的消息类型是一一对应的。比如: pipe_a 对应着订阅消息 "A"，也就意味着，pipe_a 只能发送和接收 "A" 类型的消息
+     */
 
     //  List of manual subscriptions mapped to corresponding pipes.
-    mtrie_t _manual_subscriptions;
+    mtrie_t _manual_subscriptions;    // 映射到相应 pipe 的手动订阅列表，需要配合 _manual 使用
 
     //  Distributor of messages holding the list of outbound pipes.
     dist_t _dist;

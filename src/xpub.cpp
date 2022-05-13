@@ -64,8 +64,7 @@ zmq::xpub_t::~xpub_t()
             LIBZMQ_DELETE(*it);
 }
 
-// 在使用 zmq_recv 接收消息的时候，会在真正读取数据之前，先处理可能从其他线程或者模块发送过来的命令
-// 比如监听到连接之后，会创建 engine 和 session。然后创建 pipe，并将 pipe[0] 绑定到 socket(通过发送命令的方式)。如果 pipe 被激活，则可以直接读取订阅消息
+// 绑定 pipe (有可能是对端发送了 bind 命令之后，本 socket 在 send/recv 之前先处理 pending 命令，然后执行 process_bind 命令)
 void zmq::xpub_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool locally_initiated_)
 {
     LIBZMQ_UNUSED(locally_initiated_);
@@ -122,6 +121,7 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
                 subscribe = msg.is_subscribe();
                 is_subscribe_or_cancel = true;
             }
+            // 判断是否是订阅消息
             else if (msg.size() > 0 && (*msg_data == 0 || *msg_data == 1))
             {
                 data = msg_data + 1;
@@ -136,13 +136,13 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
 
         if (is_subscribe_or_cancel)
         {
-            if (_manual)
+            if (_manual)        // 设置了 ZMQ_XPUB_MANUAL socket 属性
             {
                 // Store manual subscription to use on termination
                 if (!subscribe)
                     _manual_subscriptions.rm(data, size, pipe_);
                 else
-                    _manual_subscriptions.add(data, size, pipe_);
+                    _manual_subscriptions.add(data, size, pipe_); // 保存订阅消息类型和 pipe_ 的映射
 
                 _pending_pipes.push_back(pipe_);
             }
@@ -156,7 +156,7 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
                 }
                 else
                 {
-                    // 如果是 sub 发送过来的 订阅消息，则 xpub 会在这里进行相应处理（_subscriptions），发送消息的时候会对 _subscriptions 进行判断
+                    // 更新 pipe_ 和订阅消息类型的映射关系。通过 pipe_ 发送和接收消息会根据这个映射关系进行过滤
                     const bool first_added = _subscriptions.add(data, size, pipe_);
                     notify = first_added || _verbose_subs;
                 }
@@ -165,6 +165,10 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
             //  If the request was a new subscription, or the subscription
             //  was removed, or verbose mode or manual mode are enabled, store it
             //  so that it can be passed to the user on next recv call.
+            /**
+             * 如果请求是新订阅, 或已删除订阅, 或者 socket 设置了 ZMQ_XPUB_MANUAL/ZMQ_XPUB_VERBOSE 属性,
+             * 则将其存储起来，以便在下一次 recv 调用时将其传递给用户。
+             */
             if (_manual || (options.type == ZMQ_XPUB && notify))
             {
                 //  ZMTP 3.1 hack: we need to support sub/cancel commands, but
@@ -184,7 +188,7 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
                     *notification.data() = 0;
                 memcpy(notification.data() + 1, data, size);
 
-                _pending_data.push_back(ZMQ_MOVE(notification));       // 将接收到的消息保存到 vector 中
+                _pending_data.push_back(ZMQ_MOVE(notification));    // 这里实际上将订阅消息保存起来了，在用户调用 recv 时将其返回
                 if (metadata)
                     metadata->add_ref();
                 _pending_metadata.push_back(metadata);
@@ -214,8 +218,14 @@ void zmq::xpub_t::xwrite_activated(pipe_t *pipe_)
 
 int zmq::xpub_t::xsetsockopt(int option_, const void *optval_, size_t optvallen_)
 {
-    if (option_ == ZMQ_XPUB_VERBOSE || option_ == ZMQ_XPUB_VERBOSER || option_ == ZMQ_XPUB_MANUAL_LAST_VALUE || option_ == ZMQ_XPUB_NODROP ||
-        option_ == ZMQ_XPUB_MANUAL || option_ == ZMQ_ONLY_FIRST_SUBSCRIBE)
+    // clang-format off
+    if (option_ == ZMQ_XPUB_VERBOSE
+     || option_ == ZMQ_XPUB_VERBOSER
+     || option_ == ZMQ_XPUB_MANUAL_LAST_VALUE
+     || option_ == ZMQ_XPUB_NODROP
+     || option_ == ZMQ_XPUB_MANUAL
+     || option_ == ZMQ_ONLY_FIRST_SUBSCRIBE)
+    // clang-format on
     {
         if (optvallen_ != sizeof(int) || *static_cast<const int *>(optval_) < 0)
         {
@@ -318,7 +328,6 @@ void zmq::xpub_t::mark_last_pipe_as_matching(pipe_t *pipe_, xpub_t *self_)
         self_->_dist.match(pipe_);
 }
 
-// 在发送端会过滤消息
 int zmq::xpub_t::xsend(msg_t *msg_)
 {
     const bool msg_more = (msg_->flags() & msg_t::more) != 0;
@@ -329,7 +338,8 @@ int zmq::xpub_t::xsend(msg_t *msg_)
         // Ensure nothing from previous failed attempt to send is left matched
         _dist.unmatch();
 
-        // 这里只会发送 SUB 订阅的消息：判断该消息是否是订阅的消息（_subscriptions 的赋值是在 xread_activated 中完成的）
+        // _subscriptions.match 判断要发送的消息类型和对应的发送管道是否匹配(_subscriptions 的赋值是在 xread_activated 中完成的)
+        // mark_as_matching/mark_last_pipe_as_matching: 回调函数
         if (unlikely(_manual && _last_pipe && _send_last_pipe))
         {
             _subscriptions.match(static_cast<unsigned char *>(msg_->data()), msg_->size(), mark_last_pipe_as_matching, this);
