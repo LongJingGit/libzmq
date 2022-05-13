@@ -884,7 +884,7 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
         else
         {
             //  If required, send the routing id of the local socket to the peer.
-            if (peer.options.recv_routing_id)
+            if (peer.options.recv_routing_id)       // 对端如果是 req/router, 构造函数中 recv_routing_id 初始化为 true
             {
                 send_routing_id(new_pipes[0], options);
             }

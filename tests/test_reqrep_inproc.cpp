@@ -48,7 +48,7 @@ void test_roundtrip ()
 
 int main ()
 {
-    setup_test_environment ();
+    setup_test_environment (60000);
 
     UNITY_BEGIN ();
     RUN_TEST (test_roundtrip);

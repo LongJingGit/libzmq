@@ -112,7 +112,11 @@ void zmq::router_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool loc
         errno_assert(rc == 0);
     }
 
-    // 读取对端发送过来的 routing_id 消息(由对端 engine 构造并发送), 然后为对端 socket 创建 UUID
+    /**
+     * 读取对端发送过来的 routing_id 消息, 然后为对端 socket 创建 UUID
+     * 1. 进程间通信: 双方 handshake 成功之后，由对端 engine 构造并发送
+     * 2. 进程内通信: 由 socket 调用 connect 的时候，发送给对端
+     */
     const bool routing_id_ok = identify_peer(pipe_, locally_initiated_);
     if (routing_id_ok)
         _fq.attach(pipe_);
