@@ -70,7 +70,7 @@ void zmq::xpub_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool local
     LIBZMQ_UNUSED(locally_initiated_);
 
     zmq_assert(pipe_);
-    _dist.attach(pipe_);
+    _dist.attach(pipe_);    // 在这里会更新 dist 的 active pipe 数量. 发送和接收消息都是通过 dist 的 pipe 进行的
 
     //  If subscribe_to_all_ is specified, the caller would like to subscribe
     //  to all data on this pipe, implicitly.
@@ -121,10 +121,10 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
                 subscribe = msg.is_subscribe();
                 is_subscribe_or_cancel = true;
             }
-            // 判断是否是订阅消息
+            // 判断是否是新增订阅/删除订阅消息. 新增订阅: 第一个字节为 1; 删除订阅: 第一个字节为 0
             else if (msg.size() > 0 && (*msg_data == 0 || *msg_data == 1))
             {
-                data = msg_data + 1;
+                data = msg_data + 1;        // 要删除或者新增的消息类型
                 size = msg.size() - 1;
                 subscribe = *msg_data == 1;
                 is_subscribe_or_cancel = true;
@@ -136,13 +136,17 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
 
         if (is_subscribe_or_cancel)
         {
-            if (_manual)        // 设置了 ZMQ_XPUB_MANUAL socket 属性
+            /**
+             * 1. socket 设置了 ZMQ_XPUB_MANUAL 属性, 则 _manual 为 true, 将订阅消息类型和 pipe 的映射保存到 _manual_subscriptions 中
+             * 2. socket 没有设置 ZMQ_XPUB_MANUAL 属性，将订阅消息类型和 pipe 的映射保存到 _subscriptions 中
+             */
+            if (_manual)
             {
                 // Store manual subscription to use on termination
                 if (!subscribe)
-                    _manual_subscriptions.rm(data, size, pipe_);
+                    _manual_subscriptions.rm(data, size, pipe_);        // 删除订阅
                 else
-                    _manual_subscriptions.add(data, size, pipe_); // 保存订阅消息类型和 pipe_ 的映射
+                    _manual_subscriptions.add(data, size, pipe_); // 新增订阅: 保存新增订阅类型和 pipe_ 的映射到手动订阅列表中
 
                 _pending_pipes.push_back(pipe_);
             }
@@ -186,9 +190,9 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
                     *notification.data() = 1;
                 else
                     *notification.data() = 0;
-                memcpy(notification.data() + 1, data, size);
+                memcpy(notification.data() + 1, data, size);    // 构造一个新增订阅/删除订阅的消息
 
-                _pending_data.push_back(ZMQ_MOVE(notification));    // 这里实际上将订阅消息保存起来了，在用户调用 recv 时将其返回
+                _pending_data.push_back(ZMQ_MOVE(notification)); // 将构造的新消息保存起来. 用户可以调用 recv 获取该消息
                 if (metadata)
                     metadata->add_ref();
                 _pending_metadata.push_back(metadata);
@@ -249,15 +253,17 @@ int zmq::xpub_t::xsetsockopt(int option_, const void *optval_, size_t optvallen_
         }
         else if (option_ == ZMQ_XPUB_NODROP)
             _lossy = (*static_cast<const int *>(optval_) == 0);
+        // 手动管理订阅消息的 socket 选项
         else if (option_ == ZMQ_XPUB_MANUAL)
             _manual = (*static_cast<const int *>(optval_) != 0);
         else if (option_ == ZMQ_ONLY_FIRST_SUBSCRIBE)
             _only_first_subscribe = (*static_cast<const int *>(optval_) != 0);
     }
+    // 如果用户想要动态的订阅和取消订阅某种类型的消息，需要 ZMQ_XPUB_MANUAL 和 ZMQ_SUBSCRIBE/ZMQ_UNSUBSCRIBE 一起使用
     else if (option_ == ZMQ_SUBSCRIBE && _manual)
     {
         if (_last_pipe != NULL)
-            _subscriptions.add((unsigned char *)optval_, optvallen_, _last_pipe);
+            _subscriptions.add((unsigned char *)optval_, optvallen_, _last_pipe);       // 保存 pipe 和订阅类型的映射关系
     }
     else if (option_ == ZMQ_UNSUBSCRIBE && _manual)
     {
@@ -338,8 +344,8 @@ int zmq::xpub_t::xsend(msg_t *msg_)
         // Ensure nothing from previous failed attempt to send is left matched
         _dist.unmatch();
 
-        // _subscriptions.match 判断要发送的消息类型和对应的发送管道是否匹配(_subscriptions 的赋值是在 xread_activated 中完成的)
-        // mark_as_matching/mark_last_pipe_as_matching: 回调函数
+        // _subscriptions.match 判断要发送的消息类型和对应的发送管道是否匹配.
+        // 如果匹配的话会调用回调函数 mark_as_matching/mark_last_pipe_as_matching
         if (unlikely(_manual && _last_pipe && _send_last_pipe))
         {
             _subscriptions.match(static_cast<unsigned char *>(msg_->data()), msg_->size(), mark_last_pipe_as_matching, this);
@@ -384,7 +390,7 @@ bool zmq::xpub_t::xhas_out()
 int zmq::xpub_t::xrecv(msg_t *msg_)
 {
     //  If there is at least one
-    if (_pending_data.empty())      // 接收到的(订阅)消息在 xpub_t::xread_activated 中被提前接收，并且保存到 vector 中
+    if (_pending_data.empty()) // 如果 socket 设置了 ZMQ_XPUB_MANUAL 属性, 则会在 xread_activated 中填充该 vector 的
     {
         errno = EAGAIN;
         return -1;
@@ -401,7 +407,7 @@ int zmq::xpub_t::xrecv(msg_t *msg_)
     errno_assert(rc == 0);
     rc = msg_->init_size(_pending_data.front().size());
     errno_assert(rc == 0);
-    memcpy(msg_->data(), _pending_data.front().data(), _pending_data.front().size());
+    memcpy(msg_->data(), _pending_data.front().data(), _pending_data.front().size()); // 用 xattach_pipe 中构造的 pending_data 来填充返回消息
 
     // set metadata only if there is some
     if (metadata_t *metadata = _pending_metadata.front())

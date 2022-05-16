@@ -75,14 +75,19 @@ class xpub_t : public socket_base_t
     static void mark_as_matching (zmq::pipe_t *pipe_, xpub_t *self_);
 
     //  List of all subscriptions mapped to corresponding pipes.
-    mtrie_t _subscriptions;     // 映射到相应 pipe 的所有订阅列表
-
     /**
+     * 映射到相应 pipe 的所有订阅列表:
      * pipe 和订阅的消息类型是一一对应的。比如: pipe_a 对应着订阅消息 "A"，也就意味着，pipe_a 只能发送和接收 "A" 类型的消息
+     *
+     * 只有添加到这个列表中的消息类型，才可以被对应的 pipe 发送出去
      */
+    mtrie_t _subscriptions;
 
     //  List of manual subscriptions mapped to corresponding pipes.
-    mtrie_t _manual_subscriptions;    // 映射到相应 pipe 的手动订阅列表，需要配合 _manual 使用
+    // 手动订阅列表。需要配合 _manual 使用. 即 socket 的 ZMQ_XPUB_MANUAL 选项
+    // 添加到这个列表中的消息类型，只有通过 ZMQ_SUBSCRIBE 选项设置了之后，对应的消息类型被添加到 _subscriptions 列表中 才可以发送出去
+    // 这个列表存在的意义是可以让 sub/xsub 知道订阅或者取消订阅了哪些消息
+    mtrie_t _manual_subscriptions;
 
     //  Distributor of messages holding the list of outbound pipes.
     dist_t _dist;
@@ -114,6 +119,7 @@ class xpub_t : public socket_base_t
     bool _lossy;
 
     //  Subscriptions will not bed added automatically, only after calling set option with ZMQ_SUBSCRIBE or ZMQ_UNSUBSCRIBE
+    // 手动订阅和取消订阅选项。需要配合 ZMQ_SUBSCRIBE/ZMQ_UNSUBSCRIBE 选项使用
     bool _manual;
 
     //  Send message to the last pipe, only used if xpub is on manual and after calling set option with ZMQ_SUBSCRIBE
@@ -126,6 +132,7 @@ class xpub_t : public socket_base_t
     pipe_t *_last_pipe;
 
     // Pipes that sent subscriptions messages that have not yet been processed, only used if xpub is on manual
+    // 发送尚未处理的订阅消息的管道，仅在 xpub 处于手动状态时使用
     std::deque<pipe_t *> _pending_pipes;
 
     //  Welcome message to send to pipe when attached
