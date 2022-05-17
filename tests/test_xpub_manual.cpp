@@ -37,8 +37,8 @@ void test_basic ()
     //  Create a publisher
     void *pub = test_context_socket (ZMQ_XPUB);
     int manual = 1;
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_setsockopt (pub, ZMQ_XPUB_MANUAL, &manual, 4));
+    // pub socket 设置了 ZMQ_XPUB_MANUAL 属性(手动订阅列表)。需要配合 ZMQ_SUBSCRIBE/ZMQ_UNSUBSCRIBE 选项使用
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub, ZMQ_XPUB_MANUAL, &manual, 4));
     TEST_ASSERT_SUCCESS_ERRNO (zmq_bind (pub, "inproc://soname"));
 
     //  Create a subscriber
@@ -46,14 +46,23 @@ void test_basic ()
     TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (sub, "inproc://soname"));
 
     //  Subscribe for A
+    /**
+     * 构造订阅消息:
+     * 1. 第一个字节 1 是订阅消息标识; 在 xsub_t::xsend 中会进行判断
+     * 2. 第二个字节 'A' 表示订阅 'A' 类型的消息
+     *
+     * 注意:
+     * 1. 因为 socket 设置了 ZMQ_XPUB_MANUAL 属性，所以对端 pub 是可以读取到 sub 发送过去的订阅消息的
+     * 2. 但是此时 pub 发送 A 类型的消息，sub 仍然接收不到。需要 socket 再设置 ZMQ_SUBSCRIBE 属性才可以接收到 A 类型的消息
+     */
     const char subscription[] = {1, 'A', 0};
-    send_string_expect_success (sub, subscription, 0);
+    send_string_expect_success (sub, subscription, 0);    // sub 发送新增订阅的消息类型给 pub
 
     // Receive subscriptions from subscriber
-    recv_string_expect_success (pub, subscription, 0);
+    recv_string_expect_success (pub, subscription, 0);    // pub 读取对端发送过来的要新增订阅的消息类型
 
     // Subscribe socket for B instead
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub, ZMQ_SUBSCRIBE, "B", 1));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub, ZMQ_SUBSCRIBE, "B", 1));    // 设置 pub socket 的订阅属性
 
     // Sending A message and B Message
     send_string_expect_success (pub, "A", 0);
@@ -74,8 +83,7 @@ void test_unsubscribe_manual ()
 
     //  set pub socket options
     int manual = 1;
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_setsockopt (pub, ZMQ_XPUB_MANUAL, &manual, sizeof (manual)));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub, ZMQ_XPUB_MANUAL, &manual, sizeof (manual)));
 
     //  Create a subscriber
     void *sub = test_context_socket (ZMQ_XSUB);
@@ -95,13 +103,13 @@ void test_unsubscribe_manual ()
     recv_array_expect_success (pub, subscription1, 0);
 
     // Subscribe socket for XA instead
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub, ZMQ_SUBSCRIBE, "XA", 2));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub, ZMQ_SUBSCRIBE, "XA", 2));   // 订阅 XA 类型的消息
 
     // Receive subscription "B" from subscriber
     recv_array_expect_success (pub, subscription2, 0);
 
     // Subscribe socket for XB instead
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub, ZMQ_SUBSCRIBE, "XB", 2));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub, ZMQ_SUBSCRIBE, "XB", 2));   // 订阅 XB 类型的消息
 
     //  Unsubscribe from A
     const uint8_t unsubscription1[2] = {0, 'A'};
@@ -111,7 +119,7 @@ void test_unsubscribe_manual ()
     recv_array_expect_success (pub, unsubscription1, 0);
 
     // Unsubscribe socket from XA instead
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub, ZMQ_UNSUBSCRIBE, "XA", 2));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (pub, ZMQ_UNSUBSCRIBE, "XA", 2));   // 取消 XA 类型消息的订阅
 
     // Sending messages XA, XB
     send_string_expect_success (pub, "XA", 0);
@@ -525,12 +533,12 @@ int main ()
     setup_test_environment ();
 
     UNITY_BEGIN ();
-    RUN_TEST (test_basic);
+    // RUN_TEST (test_basic);
     RUN_TEST (test_unsubscribe_manual);
-    RUN_TEST (test_xpub_proxy_unsubscribe_on_disconnect);
-    RUN_TEST (test_missing_subscriptions);
-    RUN_TEST (test_unsubscribe_cleanup);
-    RUN_TEST (test_user_message);
+    // RUN_TEST (test_xpub_proxy_unsubscribe_on_disconnect);
+    // RUN_TEST (test_missing_subscriptions);
+    // RUN_TEST (test_unsubscribe_cleanup);
+    // RUN_TEST (test_user_message);
 #ifdef ZMQ_ONLY_FIRST_SUBSCRIBE
     RUN_TEST (test_user_message_multi);
 #endif
