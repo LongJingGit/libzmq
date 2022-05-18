@@ -349,7 +349,7 @@ zmq::socket_base_t *zmq::session_base_t::get_socket() const
 void zmq::session_base_t::process_plug()
 {
     if (_active)
-        start_connecting(false); // 只有 client 端才会执行到这里
+        start_connecting(false);
 }
 
 //  This functions can return 0 on success or -1 and errno=ECONNREFUSED if ZAP
@@ -413,8 +413,13 @@ void zmq::session_base_t::process_attach(i_engine *engine_)
     zmq_assert(!_engine);
     _engine = engine_; // 绑定 engine 到 session
 
-    // 如果是 raw_engine_t，则会在这里执行 engine_ready() ; 反之，zmtp_engine_t 不会执行执行 engine_ready
-    if (!engine_->has_handshake_stage()) // stream_engine_base_t::has_handshake_stage()
+    /**
+     * has_handshake_stage 返回值:
+     * zmtp_engine_t: 返回非 0. 不会执行 engine_ready
+     * raw_engine_t: 返回 0. 执行 engine_ready
+     * udp_engine_t: 返回 0. 执行 engine_ready
+     */
+    if (!engine_->has_handshake_stage()) // stream_engine_base_t::has_handshake_stage(), udp_engine_t::has_handshake_stage()
     {
         engine_ready(); // 创建 session 和 socket 通信的 pipe，并发送命令给 socket 绑定该 pipe
     }
@@ -717,7 +722,7 @@ void zmq::session_base_t::start_connecting(bool wait_)
             recv = true;
         }
 
-        int rc = engine->init(_addr, send, recv);
+        int rc = engine->init(_addr, send, recv);       // 创建 socket 并且设置为 nonblock
         errno_assert(rc == 0);
 
         send_attach(this, engine);

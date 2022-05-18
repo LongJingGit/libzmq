@@ -596,6 +596,7 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
 
     if (protocol == protocol_name::udp)
     {
+        // 如果使用的是 udp 协议，则 bind 只可以用 dgram 和 dish socket
         if (!(options.type == ZMQ_DGRAM || options.type == ZMQ_DISH))
         {
             errno = ENOCOMPATPROTO;
@@ -622,6 +623,7 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
             return -1;
         }
 
+        // Attention: 这里在实例化 session 的时候将 session 的 active 初始成了 true
         session_base_t *session = session_base_t::create(io_thread, true, this, options, paddr);
         errno_assert(session);
 
@@ -631,7 +633,7 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
 
         int hwms[2] = {options.sndhwm, options.rcvhwm};
         bool conflates[2] = {false, false};
-        rc = pipepair(parents, new_pipes, hwms, conflates);
+        rc = pipepair(parents, new_pipes, hwms, conflates); // 创建 socket 和 session 通信的 pipe
         errno_assert(rc == 0);
 
         //  Attach local end of the pipe to the socket object.
@@ -640,6 +642,8 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
 
         //  Attach remote end of the pipe to the session object later on.
         session->attach_pipe(new_pipes[1]);
+
+        /****** 执行完以上两个 attach_pipe, socket 和 session 进行通信的 pipe 就建立好了 ******/
 
         //  Save last endpoint URI
         paddr->to_string(_last_endpoint);
@@ -1048,6 +1052,7 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
 
     if (protocol == protocol_name::udp)
     {
+        // 如果使用的 udp 协议，则 connect 只可以使用 radio socket
         if (options.type != ZMQ_RADIO)
         {
             errno = ENOCOMPATPROTO;
@@ -1154,12 +1159,11 @@ int zmq::socket_base_t::connect_internal(const char *endpoint_uri_)
         //  Attach local end of the pipe to the socket object.
         // 将 pipe[0] 绑定到本端 socket（不管 connect 是否成功，这里都可以直接使用 zmq_send 发送消息了）
         // zmq_send 发送消息是指 socket 将消息发送给 session，并不是 engine 将消息发送给内核。所以无需关注网络层连接是否建立
-        attach_pipe(new_pipes[0], subscribe_to_all, true);
+        attach_pipe(new_pipes[0], subscribe_to_all, true);      // 将 pipe[0] 绑定到 socket
         newpipe = new_pipes[0];
 
         //  Attach remote end of the pipe to the session object later on.
-        // 将 pipe[1] 绑定到 session_base
-        session->attach_pipe(new_pipes[1]);
+        session->attach_pipe(new_pipes[1]); // 将 pipe[1] 绑定到 session
 
         /**     经过上面两个 attach_pipe ，socket 和 session 之间通信的管道就建立起来了     **/
     }

@@ -66,6 +66,8 @@ void zmq::radio_t::xattach_pipe(pipe_t *pipe_, bool subscribe_to_all_, bool loca
         xread_activated(pipe_);
 }
 
+// 读取 dish 发送过来的 join group 或者 leave group 消息, 从 dish 中新增或者删除 group.
+// 只有 dish 中存在该 group, 才可以发送属于该 group 的 msg: 每一条 msg 都有一个 group
 void zmq::radio_t::xread_activated(pipe_t *pipe_)
 {
     //  There are some subscriptions waiting. Let's process them.
@@ -77,9 +79,9 @@ void zmq::radio_t::xread_activated(pipe_t *pipe_)
         {
             std::string group = std::string(msg.group());
 
-            if (msg.is_join())
+            if (msg.is_join()) // join group
                 _subscriptions.ZMQ_MAP_INSERT_OR_EMPLACE(ZMQ_MOVE(group), pipe_);
-            else
+            else    // leave group
             {
                 std::pair<subscriptions_t::iterator, subscriptions_t::iterator> range = _subscriptions.equal_range(group);
 
@@ -159,6 +161,7 @@ int zmq::radio_t::xsend(msg_t *msg_)
 
     const std::pair<subscriptions_t::iterator, subscriptions_t::iterator> range = _subscriptions.equal_range(std::string(msg_->group()));
 
+    // 检查 msg 的 group 是否在 radio 的 _subscriptions 中(每个 msg 都有一个 group)
     for (subscriptions_t::iterator it = range.first; it != range.second; ++it)
         _dist.match(it->second);
 

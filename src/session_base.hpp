@@ -116,7 +116,8 @@ private:
 
     //  If true, this session (re)connects to the peer. Otherwise, it's
     //  a transient session created by the listener.
-    const bool _active;         // 对于 server 端，创建 session 的时候置为 false；对于 client，创建 session 的时候置为 true
+    // 实例化 session 的时候初始化的. 对于 TCP 协议来说, 一般 server 初始化为 false, client 初始化为 true; 对于 UDP 协议来说，都初始化为 true
+    const bool _active;
 
     //  Pipe connecting the session to its socket.
     zmq::pipe_t *_pipe; // IO 线程和 socket 进行数据交换的管道（session 和 socket 通信的 pipe）

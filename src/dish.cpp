@@ -100,12 +100,13 @@ int zmq::dish_t::xjoin(const char *group_)
     }
 
     //  User cannot join same group twice
-    if (!_subscriptions.insert(group).second)
+    if (!_subscriptions.insert(group).second)   // 将 group 添加到 set 中
     {
         errno = EINVAL;
         return -1;
     }
 
+    // 构造一条 join group 消息然后发送给连接到本端的所有 socket
     msg_t msg;
     int rc = msg.init_join();
     errno_assert(rc == 0);
@@ -226,6 +227,7 @@ bool zmq::dish_t::xhas_in()
 
 void zmq::dish_t::send_subscriptions(pipe_t *pipe_)
 {
+    // _subscriptions 是在 dish_t::xjoin 中更新的
     for (subscriptions_t::iterator it = _subscriptions.begin(), end = _subscriptions.end(); it != end; ++it)
     {
         msg_t msg;

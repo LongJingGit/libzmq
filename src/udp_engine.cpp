@@ -112,7 +112,7 @@ void zmq::udp_engine_t::plug(io_thread_t *io_thread_, session_base_t *session_)
 
     //  Connect to I/O threads poller object.
     io_object_t::plug(io_thread_);
-    _handle = add_fd(_fd);
+    _handle = add_fd(_fd);      // 把 socket fd 加入到内核监听队列
 
     const udp_address_t *const udp_addr = _address->resolved.udp_addr;
 
@@ -121,7 +121,7 @@ void zmq::udp_engine_t::plug(io_thread_t *io_thread_, session_base_t *session_)
     // Bind the socket to a device if applicable
     if (!_options.bound_device.empty())
     {
-        rc = rc | bind_to_device(_fd, _options.bound_device);
+        rc = rc | bind_to_device(_fd, _options.bound_device); // 绑定套接字到某个特定的接口，以后该套接字上数据的收发都是走该接口的
         if (rc != 0)
         {
             assert_success_or_recoverable(_fd, rc);
@@ -130,6 +130,7 @@ void zmq::udp_engine_t::plug(io_thread_t *io_thread_, session_base_t *session_)
         }
     }
 
+    // radio socket / dgram socket
     if (_send_enabled)
     {
         if (!_options.raw_socket)
@@ -159,6 +160,7 @@ void zmq::udp_engine_t::plug(io_thread_t *io_thread_, session_base_t *session_)
         }
     }
 
+    // dish socket / dgram socket
     if (_recv_enabled)
     {
         rc = rc | set_udp_reuse_address(_fd, true);
@@ -450,13 +452,13 @@ int zmq::udp_engine_t::resolve_raw_address(const char *name_, size_t length_)
 void zmq::udp_engine_t::out_event()
 {
     msg_t group_msg;
-    int rc = _session->pull_msg(&group_msg);
+    int rc = _session->pull_msg(&group_msg);    // Pull group description from session
     errno_assert(rc == 0 || (rc == -1 && errno == EAGAIN));
 
     if (rc == 0)
     {
         msg_t body_msg;
-        rc = _session->pull_msg(&body_msg);
+        rc = _session->pull_msg(&body_msg); // Pull message body from session
         //  If there's a group, there should also be a body
         errno_assert(rc == 0);
 
