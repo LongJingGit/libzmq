@@ -102,16 +102,16 @@ void test_long_group ()
     char my_endpoint[MAX_SOCKET_STRING];
 
     void *radio = test_context_socket (ZMQ_RADIO);
-    bind_loopback (radio, false, my_endpoint, len);
+    bind_loopback (radio, false, my_endpoint, len);     // bind tcp address
 
     void *dish = test_context_socket (ZMQ_DISH);
 
     // Joining to a long group, over 14 chars
     char group[19] = "0123456789ABCDEFGH";
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_join (dish, group));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_join (dish, group)); // 内部会构造一条 join group 消息发送给连接到 dish 的所有 socket
 
     // Connecting
-    TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (dish, my_endpoint));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_connect (dish, my_endpoint));    // 向连接的 pipe 发送 join group 消息
 
     msleep (SETTLE_TIME);
 
@@ -224,12 +224,11 @@ void test_dish_connect_fails (int ipv6_)
 {
     void *dish = test_context_socket (ZMQ_DISH);
 
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_setsockopt (dish, ZMQ_IPV6, &ipv6_, sizeof (int)));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (dish, ZMQ_IPV6, &ipv6_, sizeof (int)));
 
     const char *url = ipv6_ ? "udp://[::1]:5556" : "udp://127.0.0.1:5556";
 
-    //  Connecting dish should fail
+    //  Connecting dish should fail（使用 udp 协议的时候，dish 不可以 connect）
     TEST_ASSERT_FAILURE_ERRNO (ENOCOMPATPROTO, zmq_connect (dish, url));
 
     test_context_socket_close (dish);
@@ -240,13 +239,12 @@ void test_radio_bind_fails (int ipv6_)
 {
     void *radio = test_context_socket (ZMQ_RADIO);
 
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_setsockopt (radio, ZMQ_IPV6, &ipv6_, sizeof (int)));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (radio, ZMQ_IPV6, &ipv6_, sizeof (int)));
 
     //  Connecting dish should fail
     //  Bind radio should fail
-    TEST_ASSERT_FAILURE_ERRNO (ENOCOMPATPROTO,
-                               zmq_bind (radio, "udp://*:5556"));
+    // 如果是 udp 协议, 则 radio 套接字不可以作为 server 端(bind 失败)
+    TEST_ASSERT_FAILURE_ERRNO (ENOCOMPATPROTO, zmq_bind (radio, "udp://*:5556"));
 
     test_context_socket_close (radio);
 }
@@ -257,10 +255,8 @@ void test_radio_dish_udp (int ipv6_)
     void *radio = test_context_socket (ZMQ_RADIO);
     void *dish = test_context_socket (ZMQ_DISH);
 
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_setsockopt (radio, ZMQ_IPV6, &ipv6_, sizeof (int)));
-    TEST_ASSERT_SUCCESS_ERRNO (
-      zmq_setsockopt (dish, ZMQ_IPV6, &ipv6_, sizeof (int)));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (radio, ZMQ_IPV6, &ipv6_, sizeof (int)));
+    TEST_ASSERT_SUCCESS_ERRNO (zmq_setsockopt (dish, ZMQ_IPV6, &ipv6_, sizeof (int)));
 
     const char *radio_url = ipv6_ ? "udp://[::1]:5556" : "udp://127.0.0.1:5556";
 
@@ -532,24 +528,24 @@ int main (void)
     setup_test_environment ();
 
     UNITY_BEGIN ();
-    RUN_TEST (test_leave_unjoined_fails);
-    RUN_TEST (test_join_too_long_fails);
-    RUN_TEST (test_long_group);
-    RUN_TEST (test_join_twice_fails);
-    RUN_TEST (test_radio_bind_fails_ipv4);
-    RUN_TEST (test_radio_bind_fails_ipv6);
-    RUN_TEST (test_dish_connect_fails_ipv4);
-    RUN_TEST (test_dish_connect_fails_ipv6);
-    RUN_TEST (test_radio_dish_tcp_poll_ipv4);
-    RUN_TEST (test_radio_dish_tcp_poll_ipv6);
+    // RUN_TEST (test_leave_unjoined_fails);
+    // RUN_TEST (test_join_too_long_fails);
+    // RUN_TEST (test_long_group);
+    // RUN_TEST (test_join_twice_fails);
+    // RUN_TEST (test_radio_bind_fails_ipv4);
+    // RUN_TEST (test_radio_bind_fails_ipv6);
+    // RUN_TEST (test_dish_connect_fails_ipv4);
+    // RUN_TEST (test_dish_connect_fails_ipv6);
+    // RUN_TEST (test_radio_dish_tcp_poll_ipv4);
+    // RUN_TEST (test_radio_dish_tcp_poll_ipv6);
     RUN_TEST (test_radio_dish_udp_ipv4);
-    RUN_TEST (test_radio_dish_udp_ipv6);
+    // RUN_TEST (test_radio_dish_udp_ipv6);
 
     RUN_TEST (test_radio_dish_mcast_ipv4);
-    RUN_TEST (test_radio_dish_no_loop_ipv4);
+    // RUN_TEST (test_radio_dish_no_loop_ipv4);
 
-    RUN_TEST (test_radio_dish_mcast_ipv6);
-    RUN_TEST (test_radio_dish_no_loop_ipv6);
+    // RUN_TEST (test_radio_dish_mcast_ipv6);
+    // RUN_TEST (test_radio_dish_no_loop_ipv6);
 
     return UNITY_END ();
 }
