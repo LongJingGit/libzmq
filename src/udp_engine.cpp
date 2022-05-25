@@ -30,14 +30,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "precompiled.hpp"
 
 #if !defined ZMQ_HAVE_WINDOWS
-#    include <sys/types.h>
-#    include <unistd.h>
-#    include <sys/socket.h>
-#    include <netinet/in.h>
-#    include <arpa/inet.h>
-#    ifdef ZMQ_HAVE_VXWORKS
-#        include <sockLib.h>
-#    endif
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#ifdef ZMQ_HAVE_VXWORKS
+#include <sockLib.h>
+#endif
 #endif
 
 #include "udp_address.hpp"
@@ -48,11 +48,11 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 //  OSX uses a different name for this socket option
 #ifndef IPV6_ADD_MEMBERSHIP
-#    define IPV6_ADD_MEMBERSHIP IPV6_JOIN_GROUP
+#define IPV6_ADD_MEMBERSHIP IPV6_JOIN_GROUP
 #endif
 
 #ifdef __APPLE__
-#    include <TargetConditionals.h>
+#include <TargetConditionals.h>
 #endif
 
 zmq::udp_engine_t::udp_engine_t(const options_t &options_)
@@ -233,6 +233,7 @@ void zmq::udp_engine_t::plug(io_thread_t *io_thread_, session_base_t *session_)
     }
 }
 
+// 设置组播回环. 默认情况下，当本机发送组播数据到某个网络接口时，在 IP 层，数据会回送到本地的回环接口。
 int zmq::udp_engine_t::set_udp_multicast_loop(fd_t s_, bool is_ipv6_, bool loop_)
 {
     int level;
@@ -249,12 +250,13 @@ int zmq::udp_engine_t::set_udp_multicast_loop(fd_t s_, bool is_ipv6_, bool loop_
         optname = IP_MULTICAST_LOOP;
     }
 
-    int loop = loop_ ? 1 : 0;
+    int loop = loop_ ? 1 : 0;   // 0: 禁止回环; 1: 允许回环
     const int rc = setsockopt(s_, level, optname, reinterpret_cast<char *>(&loop), sizeof(loop));
     assert_success_or_recoverable(s_, rc);
     return rc;
 }
 
+// 设置多播数据的超时TTL，网络中数据包超过该TTL会被丢弃
 int zmq::udp_engine_t::set_udp_multicast_ttl(fd_t s_, bool is_ipv6_, int hops_)
 {
     int level;
@@ -273,6 +275,7 @@ int zmq::udp_engine_t::set_udp_multicast_ttl(fd_t s_, bool is_ipv6_, int hops_)
     return rc;
 }
 
+// 设置组播的默认网络接口，从给定的网络接口发送，其他的网络接口会忽略该数据
 int zmq::udp_engine_t::set_udp_multicast_iface(fd_t s_, bool is_ipv6_, const udp_address_t *addr_)
 {
     int rc = 0;
@@ -290,6 +293,7 @@ int zmq::udp_engine_t::set_udp_multicast_iface(fd_t s_, bool is_ipv6_, const udp
     }
     else
     {
+        // bind_addr 就是希望多播输出的 IP 地址，使用 INADDR_ANY 地址回送到默认接口
         struct in_addr bind_addr = addr_->bind_addr()->ipv4.sin_addr;
 
         if (bind_addr.s_addr != INADDR_ANY)
@@ -322,6 +326,7 @@ int zmq::udp_engine_t::set_udp_reuse_port(fd_t s_, bool on_)
 #endif
 }
 
+// 加入一个多播组
 int zmq::udp_engine_t::add_membership(fd_t s_, const udp_address_t *addr_)
 {
     const ip_addr_t *mcast_addr = addr_->target_addr();
