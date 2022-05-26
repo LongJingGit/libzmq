@@ -77,7 +77,10 @@ set(tests
     test_mock_pub_sub
     Ipclient
     Ipserver
-    spqueue)
+    spqueue
+    test_spec_rep_server
+    test_spec_rep_client
+    )
 
 if(NOT WIN32)
   list(APPEND tests test_security_gssapi test_socks test_connect_null_fuzzer test_bind_null_fuzzer test_connect_fuzzer test_bind_fuzzer)
