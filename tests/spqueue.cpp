@@ -39,6 +39,7 @@ int main(void)
         zmq_pollitem_t items[] =
         {
             {backend, 0, ZMQ_POLLIN, 0},
+            // {backend, 0, ZMQ_POLLOUT, 0},
             {frontend, 0, ZMQ_POLLIN, 0}
         };
         // clang-format on
@@ -60,6 +61,10 @@ int main(void)
             zmq_msg_recv(&msg, frontend, 0);
 
             // TODO: 转发给 worker
+            int rcvmore;
+            size_t sz = sizeof (rcvmore);
+            zmq_getsockopt(frontend, ZMQ_RCVMORE, &rcvmore, &sz);
+            zmq_msg_send(&msg, backend, rcvmore ? ZMQ_SNDMORE : 0);
 
             zmq_msg_close (&msg);
         }
