@@ -278,7 +278,7 @@ void test_radio_dish_udp(int ipv6_)
 }
 MAKE_TEST_V4V6(test_radio_dish_udp)
 
-#define MCAST_IPV4 "226.8.5.5"
+#define MCAST_IPV4 "226.8.5.5" // IPv4 Multicast address Range: 224.0.0.0 - 239.255.255.255
 #define MCAST_IPV6 "ff02::7a65:726f:6df1:0a01"
 
 static const char *mcast_url(int ipv6_)
