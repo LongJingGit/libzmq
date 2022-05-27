@@ -31,50 +31,51 @@
 #include "mailbox.hpp"
 #include "err.hpp"
 
-zmq::mailbox_t::mailbox_t ()
+zmq::mailbox_t::mailbox_t()
 {
     //  Get the pipe into passive state. That way, if the users starts by
     //  polling on the associated file descriptor it will get woken up when
     //  new command is posted.
-    const bool ok = _cpipe.check_read ();
-    zmq_assert (!ok);
+    const bool ok = _cpipe.check_read();
+    zmq_assert(!ok);
     _active = false;
 }
 
-zmq::mailbox_t::~mailbox_t ()
+zmq::mailbox_t::~mailbox_t()
 {
     //  TODO: Retrieve and deallocate commands inside the _cpipe.
 
     // Work around problem that other threads might still be in our
     // send() method, by waiting on the mutex before disappearing.
-    _sync.lock ();
-    _sync.unlock ();
+    _sync.lock();
+    _sync.unlock();
 }
 
-zmq::fd_t zmq::mailbox_t::get_fd () const
+zmq::fd_t zmq::mailbox_t::get_fd() const
 {
-    return _signaler.get_fd ();
+    return _signaler.get_fd();
 }
 
 /**
  * mailbox 之间通过 signaler 进行通信
  * signaler 可以视为一个 eventfd：send 是向 eventfd 写入一个字符；recv 是从 eventfd 读取一个字符。通过这种方式可以达到两个线程通信的目的
  */
-void zmq::mailbox_t::send (const command_t &cmd_)
+void zmq::mailbox_t::send(const command_t &cmd_)
 {
-    _sync.lock ();
-    _cpipe.write (cmd_, false);     // 将命令写入到无锁队列中
-    const bool ok = _cpipe.flush ();    // 手动刷新无锁队列缓存
-    _sync.unlock ();
+    _sync.lock();
+    _cpipe.write(cmd_, false);      // 将命令写入到无锁队列中
+    const bool ok = _cpipe.flush(); // 手动刷新无锁队列缓存
+    _sync.unlock();
     if (!ok)
-        _signaler.send ();      // 向 signaler 写入一个字符，作为通知消息
+        _signaler.send(); // 向 signaler 写入一个字符，作为通知消息
 }
 
-int zmq::mailbox_t::recv (command_t *cmd_, int timeout_)
+int zmq::mailbox_t::recv(command_t *cmd_, int timeout_)
 {
     //  Try to get the command straight away.
-    if (_active) {
-        if (_cpipe.read (cmd_))
+    if (_active)
+    {
+        if (_cpipe.read(cmd_))
             return 0;
 
         //  If there are no more commands available, switch into passive state.
@@ -82,16 +83,18 @@ int zmq::mailbox_t::recv (command_t *cmd_, int timeout_)
     }
 
     //  Wait for signal from the command sender.
-    int rc = _signaler.wait (timeout_);
-    if (rc == -1) {
-        errno_assert (errno == EAGAIN || errno == EINTR);
+    int rc = _signaler.wait(timeout_);
+    if (rc == -1)
+    {
+        errno_assert(errno == EAGAIN || errno == EINTR);
         return -1;
     }
 
     //  Receive the signal.
-    rc = _signaler.recv_failable ();
-    if (rc == -1) {
-        errno_assert (errno == EAGAIN);
+    rc = _signaler.recv_failable();
+    if (rc == -1)
+    {
+        errno_assert(errno == EAGAIN);
         return -1;
     }
 
@@ -99,12 +102,12 @@ int zmq::mailbox_t::recv (command_t *cmd_, int timeout_)
     _active = true;
 
     //  Get a command.
-    const bool ok = _cpipe.read (cmd_);
-    zmq_assert (ok);
+    const bool ok = _cpipe.read(cmd_);
+    zmq_assert(ok);
     return 0;
 }
 
-bool zmq::mailbox_t::valid () const
+bool zmq::mailbox_t::valid() const
 {
-    return _signaler.valid ();
+    return _signaler.valid();
 }
