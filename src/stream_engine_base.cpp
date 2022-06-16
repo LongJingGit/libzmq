@@ -652,7 +652,7 @@ void zmq::stream_engine_base_t::mechanism_ready()
     if (_options.recv_routing_id)
     {
         msg_t routing_id;
-        _mechanism->peer_routing_id(&routing_id);       // 拷贝接收到的 routing_id 消息
+        _mechanism->peer_routing_id(&routing_id); // 拷贝接收到的 routing_id 消息
         const int rc = _session->push_msg(&routing_id); // 将 routing_id 消息发送给 session（其实是写入到上面创建的和 socket 通信的 pipe 中）
         if (rc == -1 && errno == EAGAIN)
         {
@@ -737,7 +737,7 @@ int zmq::stream_engine_base_t::write_credential(msg_t *msg_)
             return -1;
         }
     }
-    _process_msg = &stream_engine_base_t::decode_and_push;      // 在这里，将从内核读取出来的用户数据 decode 之后，然后 push 给 session
+    _process_msg = &stream_engine_base_t::decode_and_push; // 在这里，将从内核读取出来的用户数据 decode 之后，然后 push 给 session
     return decode_and_push(msg_);
 }
 
@@ -780,7 +780,7 @@ int zmq::stream_engine_base_t::decode_and_push(msg_t *msg_)
         msg_->set_metadata(_metadata);
     if (_session->push_msg(msg_) == -1)
     {
-        if (errno == EAGAIN)
+        if (errno == EAGAIN) // 如果 socket 和 session 通信的 pipe 已经被写满，则会在这里修改 _process_msg 的指针
             _process_msg = &stream_engine_base_t::push_one_then_decode_and_push;
         return -1;
     }
