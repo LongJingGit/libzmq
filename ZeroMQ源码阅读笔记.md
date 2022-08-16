@@ -46,6 +46,8 @@ socket 在某种程度上显得复杂一些。每个 ZMQ socket 拥有自己的�
 
 > 在 ZMQ 内部，socket 线程并不是系统级别的线程（不是用 std::thread 创建的线程），而仅仅是一个继承于 socket_base_t 并且拥有邮箱（mailbox_t）的对象。
 
+在多线程的环境中，ZMQ 的使用者不必使用互斥量，条件变量或者信号等来同步并行处理的信息。ZMQ 中的每个对象只会在自己所在的线程上运行，而其他线程只能通过发送消息（命令）与对象进行交互。对于大多数的命令，ZMQ 可以保证在命令的传输过程中目标对象不会消失，也就是说命令可以保证投递（详细参考 “对象树”）。不过对于少数跨越对象树的命令需要额外的操作来实现保证投递：发送方向接收方发送命令之前，会调用接收方的 inc_seqnum() 方法来增加引用计数 _sent_seqnum; 当接收方处理命令时，会调用 process_seqnum() 增加引用计数 _processed_seqnum. 在接收方销毁时，会判断 _processed_seqnum 和 _sent_seqnum 的大小: 如果  _processed_seqnum 小于 _sent_seqnum, 说明有正在传送而没有被处理的命令，接收方不会继续执行销毁动作。销毁动作对于 object_t 和 own_t 来说是透明的，命令的发送方和接收方只需要发送和接收命令，而无需关心命令的具体序号。
+
 #### IO 线程
 
 IO 线程(io_thread_t)是 ZMQ 异步处理网络 IO 的后台线程。它的实现非常简洁。io_thread_t 实现继承 object_t，并实现 i_poll_events 接口，其内部包含一个邮箱(mailbox_t)和一个 poller 对象(poller_t)。
@@ -82,20 +84,27 @@ poller_t 是从不同操作系统提供的事件通知机制中抽象出来的�
 
 在 ZMQ 内部，对象在绝大多数情况下被组织成了树状层次结构。
 
-参考：[ZeroMQ的内部架构(一) - 在思考的路上 - ITeye博客](https://www.iteye.com/blog/watter1985-1736023)
+参考：
+
+[ZeroMQ的内部架构(一) - 在思考的路上 - ITeye博客](https://www.iteye.com/blog/watter1985-1736023)
+
+[ZeroMQ的内部架构(一)-pudn.com](https://www.pudn.com/news/628f8407bf399b7f351ecff3.html)
 
 ### ZMQ 类层次
 
-* object_t：主要用于发送命令和处理命令，所有继承 object_t 的子类都具备该类的功能
+* object_t：主要用于发送命令和处理命令，所有继承 object_t 的子类都具备该类的功能。在构造函数中可以获取当前 object 的 tid, 该 tid 指定了命令发送的方向: IO 线程或者 socket 线程
+* 指定 object 的 tid, 来决定发送命令的对象
+* own_t：ZMQ 的对象树结点，或者说多叉树的结点，其主要用于对象的销毁，可以想到，对象的销毁就是这棵树的销毁过程，必须要使用深度优先的算法来销毁。关于 ZMQ 对象树在 [Internal Architecture of libzmq](http://zeromq.org/whitepapers:architecture) 有详细讲解
 * io_thread_t：内含一个 poller，可监听句柄的读、写、异常状态，继承自 object_t，具有接收命令、处理命令、发送命令的功能
 * io_object_t：可以获取一个 io_thread_t 的 poller，从而具备 poller 功能，所有继承自该类的子类都具有 poller 功能，可监听句柄的读、写、异常状态
 * reaper_t：ZMQ 的回收线程
-* own_t：ZMQ 的对象树结点，或者说多叉树的结点，其主要用于对象的销毁，可以想到，对象的销毁就是这棵树的销毁过程，必须要使用深度优先的算法来销毁。关于 ZMQ 对象树在 [Internal Architecture of libzmq](http://zeromq.org/whitepapers:architecture) 有详细讲解
 * tcp_connector_t：zmq_socket 的连接器，使用它来建立 tcp 连接
 * tcp_listener_t：zmq_socket 的监听器
 * stream_engine：负责处理 IO 事件中的一种网络事件，把网络字节流转换成 zeromq 的 msg_t 消息传递给 session_base_t。另外一些和版本兼容相关的杂务也stream_engine 处理的。stream_engine_t 处理完杂务，到 session_base_t 就只看见 msg_t 了
 * session_base_t：管理 zmq_socket 的连接和通信，主要与 engine 进行交换
 * socket_base_t：zeromq 的 socket，在 ZMQ 中，被当成一种特殊的“线程”，具有收发命令的功能
+
+![类图](./images/zeroMQ-类图.png)
 
 ### 性能
 
@@ -220,8 +229,6 @@ ZeroMQ 把通讯的需求看成四类。其中一类是一对一结对通讯，�
 这以上模型中，关注的是通讯双方的职责，而不是实现的方式：监听端口还是连接对方端口。对于复杂的多进程协同工作的系统, 不必纠结于进程启动的次序。
 
 使用 ZeroMQ 不必在意底层实现是使用短连接还是长连接方式。ZeroMQ 中的 Transient (短暂) 和 Durable (持久) socket 也并非区别于实现层是否保持了 tcp 连接。而是概念上的不同。对于 Durable socket ，其生命期可以长于一个进程的生命期，即使进程退出，再次启动后依旧可以维持继续之前的 socket。当然，这并不是帮助你挽救你的程序因出错而崩溃的。它只是提出这个模式，让你根据设计需要可以实现。对于 ZeroMQ，如有需求（若内存有限），甚至把数据传输的 buffer 放到磁盘上。
-
-> 还有一种模式是为那些仍然认为 ZMQ 是类似 TCP 那样点对点连接的人们准备的：**排他对接模式** 将两个套接字一对一地连接起来，这种模式应用场景很少
 
 ### 传输方式
 
