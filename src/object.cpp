@@ -86,7 +86,7 @@ void zmq::object_t::process_command (const command_t &cmd_)
 
         case command_t::plug:
             process_plug ();
-            process_seqnum ();
+            process_seqnum ();      // 命令处理完毕之后再增加计数
             break;
 
         case command_t::own:
@@ -230,7 +230,7 @@ void zmq::object_t::send_stop ()
 void zmq::object_t::send_plug (own_t *destination_, bool inc_seqnum_)
 {
     if (inc_seqnum_)
-        destination_->inc_seqnum ();
+        destination_->inc_seqnum ();        // 发送命令之前先递增接收端的计数
 
     command_t cmd;
     cmd.destination = destination_;

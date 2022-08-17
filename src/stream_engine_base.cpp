@@ -192,9 +192,9 @@ void zmq::stream_engine_base_t::plug(io_thread_t *io_thread_, session_base_t *se
     _socket = _session->get_socket();
 
     //  Connect to I/O threads poller object.
-    io_object_t::plug(io_thread_); // engine 获取 io_thread 的 poller
+    io_object_t::plug(io_thread_); // engine 获取 io_thread 的 poller. engine 和 session 使用了同一个线程的 poller
 
-    // 将 conn_fd 加入到 poller 的内核监听队列中(在派生类 engine 中会设置 in_event 和 out_event)
+    // 将 conn_fd 加入到 poller 的内核监听队列中(在派生类的 plug_internal 中会设置 in_event 和 out_event)
     _handle = add_fd(_s);
     _io_error = false;
 
@@ -321,6 +321,8 @@ bool zmq::stream_engine_base_t::in_event_internal()
         {
             if (errno != EAGAIN)
             {
+                // 如果 socket 读错误，则会执行 terminate 流程.
+                // socket 读错误出现之前可能已经在 out_event 中出现了 socket 写错误，但是在 out_event 中并不会执行 terminate
                 error(connection_error);
                 return false;
             }
@@ -468,10 +470,11 @@ void zmq::stream_engine_base_t::out_event()
     //  IO error has occurred. We stop waiting for output events.
     //  The engine is not terminated until we detect input error;
     //  this is necessary to prevent losing incoming messages.
+    // 为了防止输入消息丢失, socket 写错误的时候不会 terminate engine, 只有在 socket 读错误的时候才会执行 terminate.
     if (nbytes == -1)
     {
-        reset_pollout(); // IO 发生错误（socket 错误或者发送缓冲区已写满），停止监听 EPOLLOUT 事件（下次发送缓冲区可写的时候可以重新监听 EPOLLOUT
-                         // 事件）
+        // IO 发生错误（socket 错误或者发送缓冲区已写满），停止监听 EPOLLOUT 事件（下次发送缓冲区可写的时候可以重新监听 EPOLLOUT 事件）
+        reset_pollout();
         return;
     }
 
@@ -839,7 +842,7 @@ void zmq::stream_engine_base_t::error(error_reason_t reason_)
     _session->flush();
     _session->engine_error(!_handshaking && (_mechanism == NULL || _mechanism->status() != mechanism_t::handshaking), reason_);
     unplug();
-    delete this;
+    delete this;   // 由于 engine 并没有托管到对象树 own 中，所以这里需要手动删除 engine. session 会在整个进程退出的时候在对象树中执行析构操作
 }
 
 void zmq::stream_engine_base_t::set_handshake_timer()

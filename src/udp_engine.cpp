@@ -108,7 +108,7 @@ void zmq::udp_engine_t::plug(io_thread_t *io_thread_, session_base_t *session_)
 
     zmq_assert(!_session);
     zmq_assert(session_);
-    _session = session_;
+    _session = session_;        // engine 绑定 session
 
     //  Connect to I/O threads poller object.
     io_object_t::plug(io_thread_);
@@ -526,7 +526,7 @@ void zmq::udp_engine_t::out_event()
             if (rc != EWOULDBLOCK)
             {
                 assert_success_or_recoverable(_fd, rc);
-                error(connection_error);
+                error(connection_error); // socket 错误，执行 terminate 流程: 析构 engine, 然后创建新的 engine, pipe 和 session 可以重新使用
             }
 #endif
         }
@@ -577,7 +577,7 @@ void zmq::udp_engine_t::in_event()
         if (nbytes != EWOULDBLOCK)
         {
             assert_success_or_recoverable(_fd, nbytes);
-            error(connection_error);
+            error(connection_error);  // socket 错误, 析构 engine, 解绑 session 和 engine. 清除 pipe 中的所有残余数据, 然后创建新的 engine, 并重新 plug session 和 engine
         }
 #endif
         return;

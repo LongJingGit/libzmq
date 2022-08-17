@@ -64,10 +64,18 @@ class mailbox_t ZMQ_FINAL : public i_mailbox
   private:
     //  The pipe to store actual commands.
     typedef ypipe_t<command_t, command_pipe_granularity> cpipe_t;
-    cpipe_t _cpipe;     // socket 之间传递命令的无锁队列
+    cpipe_t _cpipe;     // 传递 command 的无锁队列(socket/session/listener/connecter之间相互传递命令的无锁队列)
+
+    /**
+     * command 的传递过程：
+     * 1. 将 command 写入到 _cpipe 中
+     * 2. 向 _signaler 写入一个字符，用于通知 io thread
+     *
+     * _signaler 中 eventfd 的可读事件正在被 epoll 监听, 所以当 eventfd 可读时，就会触发 EPOLLIN 事件，然后由 io thread 在 in_event 中读取 command
+     */
 
     //  Signaler to pass signals from writer thread to reader thread.
-    signaler_t _signaler;
+    signaler_t _signaler;   // 底层实际上是 eventfd, epoll 监听了该 eventfd
 
     //  There's only one thread receiving from the mailbox, but there
     //  is arbitrary number of threads sending. Given that ypipe requires

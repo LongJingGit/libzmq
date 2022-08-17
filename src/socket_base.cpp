@@ -575,16 +575,16 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
     }
 
 #if defined ZMQ_HAVE_OPENPGM || defined ZMQ_HAVE_NORM
-#    if defined ZMQ_HAVE_OPENPGM && defined ZMQ_HAVE_NORM
+#if defined ZMQ_HAVE_OPENPGM && defined ZMQ_HAVE_NORM
     if (protocol == protocol_name::pgm || protocol == protocol_name::epgm || protocol == protocol_name::norm)
     {
-#    elif defined ZMQ_HAVE_OPENPGM
+#elif defined ZMQ_HAVE_OPENPGM
     if (protocol == protocol_name::pgm || protocol == protocol_name::epgm)
     {
-#    else // defined ZMQ_HAVE_NORM
+#else // defined ZMQ_HAVE_NORM
     if (protocol == protocol_name::norm)
     {
-#    endif
+#endif
         //  For convenience's sake, bind can be used interchangeable with
         //  connect for PGM, EPGM, NORM transports.
         rc = connect(endpoint_uri_);
@@ -637,11 +637,11 @@ int zmq::socket_base_t::bind(const char *endpoint_uri_)
         errno_assert(rc == 0);
 
         //  Attach local end of the pipe to the socket object.
-        attach_pipe(new_pipes[0], true, true);
+        attach_pipe(new_pipes[0], true, true);      // socket 绑定 pipe
         pipe_t *const newpipe = new_pipes[0];
 
         //  Attach remote end of the pipe to the session object later on.
-        session->attach_pipe(new_pipes[1]);
+        session->attach_pipe(new_pipes[1]);         // session 绑定 pipe
 
         /****** 执行完以上两个 attach_pipe, socket 和 session 进行通信的 pipe 就建立好了 ******/
 
@@ -1521,6 +1521,8 @@ int zmq::socket_base_t::close()
     //  Transfer the ownership of the socket from this application thread
     //  to the reaper thread which will take care of the rest of shutdown
     //  process.
+    // 向回收线程发送回收命令，回收线程会将该 socket 从应用线程迁移到回收线程上。然后 socket 继续在回收线程上处理命令，直到 socket 上的所有子对象全部成功销毁时，socket 就会在回收线程上销毁。
+    // 实际上回收线程只是待回收对象驻留的线程，对象的处理逻辑仍然由对象自身处理
     send_reap(this);
 
     return 0;
@@ -1539,6 +1541,7 @@ bool zmq::socket_base_t::has_out()
 void zmq::socket_base_t::start_reaping(poller_t *poller_)
 {
     //  Plug the socket to the reaper thread.
+    // 这里的 poller_ 是回收线程的 poller, socket 发送回收命令给回收线程之后，回收线程会将 socket 迁移到回收线程上，然后 socket 在回收线程上继续处理命令
     _poller = poller_;
 
     fd_t fd;
@@ -1561,7 +1564,7 @@ void zmq::socket_base_t::start_reaping(poller_t *poller_)
     }
 
     _handle = _poller->add_fd(fd, this);
-    _poller->set_pollin(_handle);
+    _poller->set_pollin(_handle);       // 只监听 socket 的可读事件: 处理 pending 的命令
 
     //  Initialise the termination and check whether it can be deallocated
     //  immediately.

@@ -72,7 +72,7 @@ protected:
     handle_t _handle;
 
     //  Socket the listener belongs to.
-    zmq::socket_base_t *_socket;                // 创建 listener 的时候调用 bind 时初始化的
+    zmq::socket_base_t *_socket;                // 创建 listener 的时候调用 bind 时初始化的（不是系统级 socket, 注意和 _s 区分）
 
     // String representation of endpoint to bind to
     std::string _endpoint;

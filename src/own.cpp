@@ -164,7 +164,7 @@ void zmq::own_t::process_term(int linger_)
     //  Start termination process and check whether by chance we cannot
     //  terminate immediately.
     _terminating = true;
-    check_term_acks();
+    check_term_acks();      // 判断该对象是否需要销毁（对象的延迟销毁: 上一次销毁时有命令还没有被处理，所以不能销毁对象）
 }
 
 void zmq::own_t::register_term_acks(int count_)
@@ -186,7 +186,10 @@ void zmq::own_t::process_term_ack()
     unregister_term_ack();
 }
 
-// 如果 _processed_seqnum 和 _sent_seqnum.get() 不相等，说明还有正在被投递但是还没有被处理的命令，该对象不会被销毁
+/**
+ * 如果 _processed_seqnum 和 _sent_seqnum.get() 不相等，说明还有正在被投递但是还没有被处理的命令，该对象不会被销毁。
+ * 在命令处理结束之后，调用 process_seqnum 增加计数并重新调用 check_term_acks 来判断是否需要销毁对象
+ */
 void zmq::own_t::check_term_acks()
 {
     if (_terminating && _processed_seqnum == _sent_seqnum.get() && _term_acks == 0)

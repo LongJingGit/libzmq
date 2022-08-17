@@ -137,10 +137,14 @@ private:
     bool _pending;
 
     //  The protocol I/O engine connected to the session.
+    /**
+     * engine 的生命周期由 session 管理. 正常情况下，session 会在整个 zmq_socket 退出的时候在对象树 own 中析构, 然后在 session 的析构函数中析构 engine,
+     * 但是如果 socket 在收发数据的过程中发生了错误, engine 会在 session_base_t::engine_error 中执行析构
+     */
     zmq::i_engine *_engine;
 
     //  The socket the session belongs to.
-    zmq::socket_base_t *_socket;            // 本端 socket
+    zmq::socket_base_t *_socket;            // 本端 socket, zmq 抽象 socket, 不是系统级 socket
 
     //  I/O thread the session is living in. It will be used to plug in
     //  the engines into the same thread.

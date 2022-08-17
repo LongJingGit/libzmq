@@ -86,12 +86,12 @@ void zmq::tcp_connecter_t::process_term(int linger_)
     stream_connecter_base_t::process_term(linger_);
 }
 
-// EPOLLOUT 事件触发：并不一定是 socket 可写数据，也有可能是 socket 发生了错误（比如连接拒绝或者无可用内存，这也会被内核标记为可写）
 /**
- * EPOLLOUT 事件触发的两种条件：
- * 1. 连接建立：可以直接向对应 socket 写入数据
- * 2. socket 可写(缓冲区从不可写变为可写或者 socket 发生错误)
- *    2.1 如果是 socket 发生了错误（比如连接被拒绝），则需要尝试重新连接：关闭原有的 conn_fd，并将其从 epoll 中删除；创建新的 conn_fd 并加入 epoll
+ * connecter 的 out_event 只处理 <连接建立> 或者 <socket发生错误> 这两种情况:
+ *
+ * 1. 连接建立: 因为与内核进行数据交互的是 engine, 所以连接建立完成之后需要将 socket 从 epoll 中删除，然后由 engine 将 socket 加入到内核的监听队列，当 socket 可读或者可写时，触发 engine 的 in_event/out_event
+ *
+ * 2. socket 发生错误(比如连接被拒绝): 需要尝试重新连接：关闭原有的 socket, 从 epoll 中删除 socket, 然后创建新的 socket 并尝试重新连接
  */
 void zmq::tcp_connecter_t::out_event()
 {
@@ -103,25 +103,15 @@ void zmq::tcp_connecter_t::out_event()
 
     //  TODO this is still very similar to (t)ipc_connecter_t, maybe the
     //  differences can be factored out
-
-    // 从内核监听队列中删除 conn_fd，后面 engine 中会重新将 conn_fd 加入内核监听队列，并设置 handle.
-    // 这么做的目的是在 connect() 中会判断是否是 socket 发生了错误才触发的 out_event()。如果 socket 发生了错误，则不需要再次从内核监听队列删除 fd；如果没有发生错误，会在 engine 中重新将该 fd 加入到内核监听队列。这样就可以和 server 端重用 engine 的代码。
-    // 重新尝试连接需要创建新的 socket，所以这里需要删除旧的 socket
     rm_handle();
 
     /**
-     * 如果 socket 没有发生错误，返回值为 conn_fd，并将原来的 conn_fd 设置为 retired_fd。如果没有发生错误，表示已经正常连接了，但是由于 rm_handle 中已经从内核监听队列中删除了该 fd，所以如果对端发送了数据，则不会触发 EPOLLIN 事件，只有在 engine 中将 conn_fd 重新加入内核监听队列，才会由 epoll 重新监听
-     *
-     * 如果 socket 发生错误，则会返回 retired_fd
+     * socket 没有发生错误，返回值为 conn_fd
+     * socket 发生错误，会返回 retired_fd
      */
     const fd_t fd = connect();
 
-    /**
-     * 执行过 rm_handler() 和 connect() 之后：
-     * 1. 如果是连接建立成功触发的 out_event()，则会从 epoll 中删除 conn_fd，然后将 conn_fd 拷贝一份传递给engine(用来实例化engine)，然后将 conn_fd 标记为 retired_fd，并在 engine 建立好之后再将 conn_fd 重新加入到 epoll 中（只有 engine 建立好之后才可以通过 conn_fd 和内核交换数据）
-     * 2. 如果是连接建立失败，socket 发生错误触发的 out_event()，则会从 epoll 中删除原有的 conn_fd，并创建新的 conn_fd 尝试重新连接。连接成功之后执行(1)
-     */
-
+    // 如果连接被拒绝且用户设置了连接被拒绝之后停止连接的选项，则执行 terminate
     if (fd == retired_fd && ((options.reconnect_stop & ZMQ_RECONNECT_STOP_CONN_REFUSED) && errno == ECONNREFUSED))
     {
         send_conn_failed(_session);
@@ -133,14 +123,16 @@ void zmq::tcp_connecter_t::out_event()
     //  Handle the error condition by attempt to reconnect.
     if (fd == retired_fd || !tune_socket(fd))
     {
-        close();
-        add_reconnect_timer();
+        close();                    // 关闭原来的 socket
+        add_reconnect_timer();      // 设置定时器，尝试重新连接
         return;
     }
 
+    // 如果 socket 连接成功，则会创建 engine, 在 engine 中将 socket 加入到 epoll, 由 engine 和内核进行数据交互
     create_engine(fd, get_socket_name<tcp_address_t>(fd, socket_end_local));
 }
 
+// 在 epoll::loop 中会检查定时器
 void zmq::tcp_connecter_t::timer_event(int id_)
 {
     if (id_ == connect_timer_id)
@@ -162,22 +154,20 @@ void zmq::tcp_connecter_t::start_connecting()
     //  Connect may succeed in synchronous manner.
     if (rc == 0)
     {
-        // 这里需要补充的是：如果马上建立了 tcp 连接，则 server 端的 conn_fd 的 EPOLLOUT 立刻会被触发(对端马上就可以发送数据)
-        _handle = add_fd(_s); // 注册 conn_fd 描述符给 epoll(此时还没有注册 conn_fd 的 EPOLLIN 和 EPOLLOUT 事件)
-
-        // 需要注意的是：这里手动触发了 EPOLLOUT 事件，并没有等待 epoll 返回。但是这里触发 EPOLLOUT 事件之后并不从 conn_fd 写入数据，而是创建 engine
-        out_event(); // 连接建立，直接写入数据（不用监听 EPOLLOUT 直接发送数据，如果返回的是 EAGAIN，再将 EPOLLOUT 事件加入监听，等待 EPOLLOUT 事件触发之后，再去发送数据，待数据发送完毕，从内核监听队列中删除 EPOLLOUT 事件）
+        _handle = add_fd(_s);
+        out_event();
     }
 
     //  Connection establishment may be delayed. Poll for its completion.
     else if (rc == -1 && errno == EINPROGRESS)
     {
-        _handle = add_fd(_s);   // 如果返回的错误码是 EINPROGRESS，则表示正在连接中，需要将 conn_fd 加入到内核监听队列，并监听 EPOLLOUT 事件
-        set_pollout(_handle);   // 监听 conn_fd 的 EPOLLOUT 事件（当连接建立的时候会触发 EPOLLOUT 事件）
+        // 正在连接中... 监听 conn_fd 的 EPOLLOUT 事件，当连接建立的时候触发 EPOLLOUT 事件，在 tcp_connecter_t::out_event 中完成连接
+        _handle = add_fd(_s);
+        set_pollout(_handle);
         _socket->event_connect_delayed(make_unconnected_connect_endpoint_pair(_endpoint), zmq_errno());
 
         //  add userspace connect timeout
-        add_connect_timer();
+        add_connect_timer();        // 设置连接的超时时间
     }
 
     //  Handle any other error condition by eventual reconnect.
@@ -185,7 +175,7 @@ void zmq::tcp_connecter_t::start_connecting()
     else
     {
         if (_s != retired_fd)
-            close();        // 需要关闭 socket，重新创建新的 socket 去尝试重新连接
+            close();
         add_reconnect_timer();
     }
 }

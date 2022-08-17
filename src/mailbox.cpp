@@ -82,6 +82,12 @@ int zmq::mailbox_t::recv(command_t *cmd_, int timeout_)
         _active = false;
     }
 
+    /**
+     * 如果 mailbox_t::recv 接口是从 io_thread_t::in_event 中调用过来的，那么说明 _signaler 中的 eventfd 的可读事件已经被触发了.
+     * 在 _signaler.wait 接口中重新监听 eventfd 的可读事件（如果 eventfd 没有被读取，则可读事件会在这里再次触发）,
+     * 然后在 _signaler.recv_failable 接口中读取 eventfd 中的数据，最后调用 _cpipe.read 读取 command
+     */
+
     //  Wait for signal from the command sender.
     int rc = _signaler.wait(timeout_);
     if (rc == -1)

@@ -129,8 +129,8 @@ void zmq::stream_listener_base_t::create_engine(fd_t fd_)
      *
      * server 创建 session 的时候将 _active 初始化成了 false，所以将 session 发给 IO 线程实际上没有任何作用？
      *
-     * FIXME: 这里 launch_child 的实际作用是什么？
-     *      是为了绑定 object_->set_owner (this) 吗？
+     * 这里 launch_child 的实际作用是什么？
+     *     执行 object_->set_owner (this) , 将 session 添加到 _owned, 在 zmq::socket_base_t::close() 的时候向回收线程发送消息，由回收线程析构这些对象
      */
     launch_child(session);
 

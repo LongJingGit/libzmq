@@ -411,7 +411,7 @@ void zmq::session_base_t::process_attach(i_engine *engine_)
 {
     zmq_assert(engine_ != NULL);
     zmq_assert(!_engine);
-    _engine = engine_; // 绑定 engine 到 session
+    _engine = engine_; // 绑定 engine 到 session, engine 的生命周期由 session 来管理
 
     /**
      * has_handshake_stage 返回值:
@@ -426,7 +426,7 @@ void zmq::session_base_t::process_attach(i_engine *engine_)
 
     //  Plug in the engine.
     // 注意：对于 server 端来说，到目前为止，如果是 zmtp_engine_t ，则此时还没有创建 session 和 socket 通信的 pipe
-    _engine->plug(_io_thread, this);
+    _engine->plug(_io_thread, this);        // session 绑定 engine
 }
 
 // 创建 session 和 socket 通信的 pipe，并将 pipe 绑定到 session 和 socket。便于 session 和 socket 进行数据交换
@@ -499,6 +499,9 @@ void zmq::session_base_t::engine_error(bool handshaked_, zmq::i_engine::error_re
     case i_engine::connection_error:
         if (_active)
         {
+            // 如果是 tcp 协议的 client 端, 如果用户设置了重连, 则会尝试重新连接，否则执行 terminate
+            // 如果是 tcp 协议的 server 端, 不需要执行 terminate, 当有新的 client 连接上来的时候，会为对端创建新的 conn_fd 以及一系列的 session engine 等
+            // 如果是 udp 协议, 则不会析构 session 和 pipe, 只需要创建新的 engine, 然后和 session plug 之后就可以读写数据
             reconnect();
             break;
         }
@@ -725,7 +728,7 @@ void zmq::session_base_t::start_connecting(bool wait_)
         int rc = engine->init(_addr, send, recv);       // 创建 socket 并且设置为 nonblock
         errno_assert(rc == 0);
 
-        send_attach(this, engine);
+        send_attach(this, engine);      // session 绑定 engine
 
         return;
     }

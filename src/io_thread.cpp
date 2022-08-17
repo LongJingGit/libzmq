@@ -95,6 +95,7 @@ void zmq::io_thread_t::in_event()
     // 从 mailbox 中读取命令，并处理 process_command
     int rc = _mailbox.recv(&cmd, 0);
 
+    // 触发了 EPOLLIN 事件时，一直读取数据，直到队列为空（是否需要限制 IO 线程在一次 EPOLLIN 事件中处理命令的数量）
     while (rc == 0 || errno == EINTR)
     {
         if (rc == 0)

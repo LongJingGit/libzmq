@@ -78,6 +78,7 @@ void zmq::poller_base_t::cancel_timer(i_poll_events *sink_, int id_)
     //  As soon as that is resolved an 'assert (false)' should be put here.
 }
 
+// 在 io thread 的 epoll loop 中执行定时器
 uint64_t zmq::poller_base_t::execute_timers()
 {
     //  Fast track.

@@ -541,7 +541,7 @@ zmq::socket_base_t *zmq::ctx_t::create_socket(int type_)
     const int sid = (static_cast<int>(max_socket_id.add(1))) + 1;
 
     //  Create the socket and register its mailbox.
-    socket_base_t *s = socket_base_t::create(type_, this, slot, sid);
+    socket_base_t *s = socket_base_t::create(type_, this, slot, sid); // slot 就是 socket 的 tid
     if (!s)
     {
         _empty_slots.push_back(slot);

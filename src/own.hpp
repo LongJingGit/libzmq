@@ -122,6 +122,14 @@ class own_t : public object_t
     //  the object if there are no more child objects or pending term acks.
     bool _terminating;
 
+    /**
+     * ZMQ 是如何保证命令一定可以被投递(也就是说命令在传输的过程中目标对象不会被销毁):
+     *
+     * 发送方向接收方发送命令之前，会调用接收方的 inc_seqnum() 方法来增加计数 _sent_seqnum;
+     * 当接收方处理完命令之后，会调用接收方的 process_seqnum() 增加计数 _processed_seqnum.
+     * 在接收方销毁时，会调用 check_term_acks() 判断 _processed_seqnum 和 _sent_seqnum 是否相等，如果不相等，说明还有正在被传送而没有被处理的命令，接收方不会继续执行销毁动作
+     */
+
     //  Sequence number of the last command sent to this object.
     atomic_counter_t _sent_seqnum;
 
@@ -135,7 +143,7 @@ class own_t : public object_t
     //  List of all objects owned by this socket. We are responsible
     //  for deallocating them before we quit.
     typedef std::set<own_t *> owned_t;
-    owned_t _owned;
+    owned_t _owned;   // zmq 的对象树，主要用于保存对象，在 socket 退出的时候由回收线程销毁这些对象
 
     //  Number of events we have to get before we can destroy the object.
     int _term_acks;
