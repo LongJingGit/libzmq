@@ -93,7 +93,6 @@ poller_t 是从不同操作系统提供的事件通知机制中抽象出来的�
 ### ZMQ 类层次
 
 * object_t：主要用于发送命令和处理命令，所有继承 object_t 的子类都具备该类的功能。在构造函数中可以获取当前 object 的 tid, 该 tid 指定了命令发送的方向: IO 线程或者 socket 线程
-* 指定 object 的 tid, 来决定发送命令的对象
 * own_t：ZMQ 的对象树结点，或者说多叉树的结点，其主要用于对象的销毁，可以想到，对象的销毁就是这棵树的销毁过程，必须要使用深度优先的算法来销毁。关于 ZMQ 对象树在 [Internal Architecture of libzmq](http://zeromq.org/whitepapers:architecture) 有详细讲解
 * io_thread_t：内含一个 poller，可监听句柄的读、写、异常状态，继承自 object_t，具有接收命令、处理命令、发送命令的功能
 * io_object_t：可以获取一个 io_thread_t 的 poller，从而具备 poller 功能，所有继承自该类的子类都具有 poller 功能，可监听句柄的读、写、异常状态
