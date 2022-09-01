@@ -50,9 +50,9 @@ int zmq::pipepair(object_t *parents_[2], pipe_t *pipes_[2], const int hwms_[2], 
     // 这里创建了两对无锁队列 upipe1 upipe2
     pipe_t::upipe_t *upipe1;
     if (conflate_[0])
-        upipe1 = new (std::nothrow) upipe_conflate_t();
+        upipe1 = new (std::nothrow) upipe_conflate_t(); // 有锁的 buffer
     else
-        upipe1 = new (std::nothrow) upipe_normal_t();
+        upipe1 = new (std::nothrow) upipe_normal_t(); // 默认的队列。内部使用的是无锁的 spsc, 并且增加了批量处理
     alloc_assert(upipe1);
 
     pipe_t::upipe_t *upipe2;
@@ -204,7 +204,7 @@ bool zmq::pipe_t::read(msg_t *msg_)
 
     while (true)
     {
-        if (!_in_pipe->read(msg_))          // 一次 read 只能读取到一帧消息，对于 socket 发送了多帧消息的，这里需要 read 多次
+        if (!_in_pipe->read(msg_)) // 一次 read 只能读取到一帧消息，对于 socket 发送了多帧消息的，这里需要 read 多次
         {
             _in_active = false;
             return false;
@@ -254,6 +254,7 @@ bool zmq::pipe_t::check_write()
     return true;
 }
 
+// 将消息写入到无锁队列，但是因为没有更新读写索引，所以消息者读取不到该消息
 bool zmq::pipe_t::write(const msg_t *msg_)
 {
     if (unlikely(!check_write()))
@@ -261,7 +262,7 @@ bool zmq::pipe_t::write(const msg_t *msg_)
 
     const bool more = (msg_->flags() & msg_t::more) != 0;
     const bool is_routing_id = msg_->is_routing_id();
-    _out_pipe->write(*msg_, more);      // 这里：这里是向 out_pipe 写入消息体，不再是消息指针
+    _out_pipe->write(*msg_, more); // 这里：这里是向 out_pipe 写入消息体，不再是消息指针
     if (!more && !is_routing_id)
         _msgs_written++;
 
@@ -284,9 +285,9 @@ void zmq::pipe_t::rollback() const
 }
 
 /**
- * 当消息发送完毕之后，就会 flush 该消息。flush 会尝试两种操作：
- * 1. 直接通过 out_pipe flush 消息，如果成功，直接返回；如果失败，说明 reader 在睡眠，需要唤醒：执行2
- * 2. 如果 1 失败，则会给 session 发送信号，session 接收到信号之后从和 socket 通信的管道中读取数据，并交给 engine 发送出去
+ * 如果 pipe_t 内部使用的是 upipe_normal_t:
+ * 在 socket 多次调用了 send 之后将多条消息写入到无锁队列后, flush 用于一次性更新无锁队列的读写索引，然后给 session 端的 pipe 发送命令, session
+ * 就可以读取到这些消息
  */
 void zmq::pipe_t::flush()
 {
@@ -295,9 +296,10 @@ void zmq::pipe_t::flush()
         return;
 
     if (_out_pipe && !_out_pipe->flush())
-        send_activate_read(_peer);
+        send_activate_read(_peer); // 发送 activate_read 命令给 session 端的 pipe
 }
 
+// pipe 接收到 activate_read 命令之后，由 session 从 pipe 中读取消息
 void zmq::pipe_t::process_activate_read()
 {
     if (!_in_active && (_state == active || _state == waiting_for_delimiter))

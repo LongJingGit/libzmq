@@ -71,6 +71,7 @@ public:
     //  set to true the item is assumed to be continued by items
     //  subsequently written to the pipe. Incomplete items are never
     //  flushed down the stream.
+    // 注意：虽然调用了 write 操作将消息写入到了队列中，但是因为没有调用 flush, 没有更新读写索引，所以对端此时仍然读取不到消息
     void write(const T &value_, bool incomplete_)
     {
         //  Place the value to the queue, add new terminator element.
@@ -101,6 +102,7 @@ public:
     //  Flush all the completed items into the pipe. Returns false if
     //  the reader thread is sleeping. In that case, caller is obliged to
     //  wake the reader up before using the pipe again.
+    // 只有执行 flush 的时候才会更新读写索引
     bool flush()
     {
         //  If there are no un-flushed items, do nothing.
