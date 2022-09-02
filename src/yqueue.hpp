@@ -115,10 +115,10 @@ public:
         _back_chunk = _end_chunk;
         _back_pos = _end_pos;
 
-        if (++_end_pos != N)        // 说明队列中还有空间
+        if (++_end_pos != N)        // 说明当前 chunk 中还有空间
             return;
 
-        // 队列已满，需要重用已经释放的 chunk 或者申请新的 chunk，并添加在队列的尾部
+        // 当前 chunk 已满，需要重用已经释放的 chunk 或者申请新的 chunk, 并添加在队列的尾部
         chunk_t *sc = _spare_chunk.xchg(NULL);
         if (sc)
         {

@@ -71,11 +71,11 @@ public:
     //  set to true the item is assumed to be continued by items
     //  subsequently written to the pipe. Incomplete items are never
     //  flushed down the stream.
-    // 注意：虽然调用了 write 操作将消息写入到了队列中，但是因为没有调用 flush, 没有更新读写索引，所以对端此时仍然读取不到消息
+    // 注意：虽然调用了 write 操作将消息写入到了队列中，但是因为没有调用 flush, 没有更新读写索引，所以对端此时读取不到这条消息
     void write(const T &value_, bool incomplete_)
     {
         //  Place the value to the queue, add new terminator element.
-        _queue.back() = value_; // 注意：这里存放的不是指向消息的指针，而是真实的消息本身(back 返回值的是引用，所以可以直接修改back的值)
+        _queue.back() = value_; // 注意：这里存放的不是指向消息的指针，而是真实的消息本身(back 返回值的是 T, 这里执行消息的拷贝赋值)
         _queue.push();
 
         //  Move the "flush up to here" poiter.
@@ -162,7 +162,7 @@ public:
 
         //  There was at least one value prefetched.
         //  Return it to the caller.
-        *value_ = _queue.front(); // 从队列头部取消息（这里会执行一次构造函数吗？拷贝构造？移动构造？）
+        *value_ = _queue.front(); // 从队列头部取消息（这里会执行一次 T 的拷贝赋值?）
         _queue.pop();             // 移动 begin_pos, 如果一个 chunk 的消息全部读取完毕，则队列会释放掉该 chunk 的内存空间
         return true;
     }
@@ -183,6 +183,11 @@ protected:
     //  Front of the queue points to the first prefetched item, back of
     //  the pipe points to last un-flushed item. Front is used only by
     //  reader thread, while back is used only by writer thread.
+    /**
+     * 普通的无锁队列的实现: 底层是一段提前分配好的连续的内存，入队操作使用 placement new 构造对象。典型代表: ConcurrentQueue, folly/ProducerConsumerQueue.h
+     *
+     * ZeroMQ 底层的无锁队列提前构造好了 N 个对象 T, 入队操作仅仅需要移动下标即可(还需要执行 T 的拷贝赋值)
+     */
     yqueue_t<T, N> _queue;
 
     //  Points to the first un-flushed item. This variable is used
