@@ -77,6 +77,8 @@ void zmq::dist_t::match(pipe_t *pipe_)
         return;
 
     //  Mark the pipe as matching.
+    // 这里将对应的 pipe 标记为 matching: 实际内部将匹配到的 pipe 移动到整个数组的前面
+    // _matching 实际上就是总共匹配到的 pipe 数量, 也是对应的匹配到 pipe 的数组下标
     _pipes.swap(_pipes.index(pipe_), _matching);
     _matching++;
 }
@@ -181,6 +183,8 @@ void zmq::dist_t::distribute(msg_t *msg_)
 
     if (msg_->is_vsm())
     {
+        // 将消息发送给订阅该消息的所有客户端(如果没有指定订阅, 则将 msg 发送每一个连接上来的对端: 多播)
+        // dist_t::match 接口已经保证了 _pipes 的前面 _matching 个 pipe 肯定是匹配 msg_ 的
         for (pipes_t::size_type i = 0; i < _matching;)
         {
             if (!write(_pipes[i], msg_)) // 可能有多个订阅者，这里依次发送给每一个订阅者

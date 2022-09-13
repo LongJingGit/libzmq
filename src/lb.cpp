@@ -90,6 +90,7 @@ int zmq::lb_t::send(msg_t *msg_)
     return sendpipe(msg_, NULL);
 }
 
+// 以负载均衡的方式将每一条消息发送给对端: 将 A 消息发送给 pipe_a, 然后将 B 消息发送给 pipe_b, 将 C 消息发送给 pipe_c...
 int zmq::lb_t::sendpipe(msg_t *msg_, pipe_t **pipe_)
 {
     //  Drop the message if required. If we are at the end of the message

@@ -76,8 +76,8 @@ int test_defaults (int send_hwm_, int msg_cnt_, const char *endpoint_)
 
     // Send until we reach "mute" state
     int send_count = 0;
-    while (send_count < msg_cnt_
-           && zmq_send (pub_socket, "test message", 13, ZMQ_DONTWAIT) == 13) // 如果设置了 ZMQ_DONTWAIT，则触发了 HWM 之后，会直接返回 -1
+    // 如果设置了 ZMQ_DONTWAIT，则触发了 HWM 之后，会直接返回 -1
+    while (send_count < msg_cnt_ && zmq_send (pub_socket, "test message", 13, ZMQ_DONTWAIT) == 13)
         ++send_count;
 
     TEST_ASSERT_EQUAL_INT (send_hwm_, send_count);

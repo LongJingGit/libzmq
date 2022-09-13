@@ -148,7 +148,7 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
                 else
                     _manual_subscriptions.add(data, size, pipe_); // 新增订阅: 保存新增订阅类型和 pipe_ 的映射到手动订阅列表中
 
-                _pending_pipes.push_back(pipe_);
+                _pending_pipes.push_back(pipe_);        // 保存输出 pipe
             }
             else
             {
@@ -192,7 +192,7 @@ void zmq::xpub_t::xread_activated(pipe_t *pipe_)
                     *notification.data() = 0;
                 memcpy(notification.data() + 1, data, size);    // 构造一个新增订阅/删除订阅的消息
 
-                _pending_data.push_back(ZMQ_MOVE(notification)); // 将构造的新消息保存起来. 用户可以调用 recv 获取该消息
+                _pending_data.push_back(ZMQ_MOVE(notification)); // 将构造的新消息保存起来. 调用 xpub_t::xrecv 时会将该消息返回给应用层
                 if (metadata)
                     metadata->add_ref();
                 _pending_metadata.push_back(metadata);
@@ -344,7 +344,7 @@ int zmq::xpub_t::xsend(msg_t *msg_)
         // Ensure nothing from previous failed attempt to send is left matched
         _dist.unmatch();
 
-        // _subscriptions.match 判断要发送的消息类型和对应的发送管道是否匹配.
+        // _subscriptions.match 判断要发送的消息 msg 和对应的发送管道 pipe 是否匹配.
         // 如果匹配的话会调用回调函数 mark_as_matching/mark_last_pipe_as_matching
         if (unlikely(_manual && _last_pipe && _send_last_pipe))
         {
@@ -366,6 +366,7 @@ int zmq::xpub_t::xsend(msg_t *msg_)
     int rc = -1; //  Assume we fail
     if (_lossy || _dist.check_hwm())            // 检查 HWM（如果 check_hwm 返回失败，则不再继续发送消息，并设置错误码为 EAGAIN）
     {
+        // 将 msg_ 发送给每一个匹配的 pipe
         if (_dist.send_to_matching(msg_) == 0)
         {
             //  If we are at the end of multi-part message we can mark

@@ -88,7 +88,7 @@ class dist_t
 
     //  List of outbound pipes.
     typedef array_t<zmq::pipe_t, 2> pipes_t;
-    pipes_t _pipes;     // socket 和 session 通信的管道
+    pipes_t _pipes;     // socket 和 session 通信的管道, 一个 session 可以关联多个不同的 pipe, 向不同的对端发送数据. 这些对端可以订阅不同的消息类型, 在发送时会进行匹配
 
     //  Number of all the pipes to send the next message to.
     pipes_t::size_type _matching;
