@@ -426,12 +426,20 @@ void zmq::stream_engine_base_t::out_event()
          * 1. 从 socket 和 session 通信的队列中读取消息（socket 可能发送了多帧消息，这多帧消息存放在不同的内存，每次 pull
          * 的时候拿到的是每一帧消息的指针）
          * 2. 拿到每一帧存放在不同内存区域的消息的指针，将其拷贝到连续的一块内存区域 _outpos 中
+         *
+         * NOTE: 对消息的批量处理: 将多条消息合并到一条消息里，一次性发送给对端，降低遍历调用栈的次数
          */
         while (_outsize < static_cast<size_t>(_options.out_batch_size))
         {
             /**
              * 在 zmtp_engine 的构造函数中，_next_msg 是指向 routing_id_msg 的，但是在 handshake() 中，将 _next_msg 指向了 next_handshake_command
              * 在 next_handshake_command 调用中会构造一条 routing_id 的消息，然后发送给对端 socket，由对端 socket 生成 UUID
+             *
+             * _next_msg 函数指针的变化:
+             * 1. 在 zmtp_engine 的构造函数中，_next_msg 是指向 routing_id_msg 的
+             * 2. 在 handshake() 中，将 _next_msg 指向了 next_handshake_command
+             * 在 next_handshake_command 调用中会构造一条 routing_id 的消息，然后发送给对端 socket，由对端 socket 生成 UUID
+             * 3. 完成 handshake() 之后, _next_msg 就会一直指向 next_handshake_command, 此时 _mechanism->status() == mechanism_t::ready, engine 会从 session 中 pull 消息, 然后将其发送出去
              */
             if ((this->*_next_msg)(&_tx_msg) == -1)
             {
@@ -442,6 +450,7 @@ void zmq::stream_engine_base_t::out_event()
                 else
                     break;
             }
+            // 批量处理: 将多条消息合并到一个 buffer 中, 一次性发送
             _encoder->load_msg(&_tx_msg);
             unsigned char *bufptr = _outpos + _outsize;
             const size_t n = _encoder->encode(&bufptr, _options.out_batch_size - _outsize);
