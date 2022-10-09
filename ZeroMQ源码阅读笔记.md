@@ -304,7 +304,27 @@ ZMQ 如何处理以下异常：
 
 我们重点关注前五个异常
 
-## 面试题
+## 典型 demo
+
+1. REQ/REP: test_reqrep_device.cpp、test_spec_req.cpp、test_probe_router
+
+2. PUSH/PULL: test_immediate.cpp
+
+3. PUB/SUB: test_sub_forward.cpp、test_hwm_pubsub.cpp
+
+## 参考
+
+* [<摘录>开源软件架构-ZeroMQ](https://www.cnblogs.com/hummersofdie/p/4597031.html)
+* [业界消息总线技术分析-ZeroMQ-云社区-华为云 (huaweicloud.com)](https://bbs.huaweicloud.com/blogs/detail/104842)
+* [ZeroMQ的内部架构(一) - 在思考的路上 - ITeye博客](https://www.iteye.com/blog/watter1985-1736023)
+
+## 拓展阅读
+
+[消息队列高手课 (lianglianglee.com)](https://learn.lianglianglee.com/专栏/消息队列高手课)
+
+## 补充知识点
+
+### 经典面试题
 
 > epoll 水平触发模式下，当 socket 可写时，会不停的触发 EPOLLOUT 事件，如何处理？
 
@@ -320,21 +340,13 @@ ZMQ 如何处理以下异常：
 
 ZMQ 和 muduo 都是采用的第二种处理方案。
 
-## 典型 demo
-
-1. REQ/REP: test_reqrep_device.cpp、test_spec_req.cpp、test_probe_router
-
-2. PUSH/PULL: test_immediate.cpp
-
-3. PUB/SUB: test_sub_forward.cpp、test_hwm_pubsub.cpp
-
-### ZeroMQ 中的信号处理
+### 典型信号处理
 
 ```cpp
-static int s_interrupted = 0;
+static volatile bool keep_running_ = true;
 static void s_signal_handler (int signal_value)
 {
-    s_interrupted = 1;
+    keep_running_ = false;
 }
 
 static void s_catch_signals (void)
@@ -347,13 +359,6 @@ static void s_catch_signals (void)
     sigaction (SIGTERM, &action, NULL);
 }
 ```
-
-
-## 参考
-
-* [<摘录>开源软件架构-ZeroMQ](https://www.cnblogs.com/hummersofdie/p/4597031.html)
-* [业界消息总线技术分析-ZeroMQ-云社区-华为云 (huaweicloud.com)](https://bbs.huaweicloud.com/blogs/detail/104842)
-* [ZeroMQ的内部架构(一) - 在思考的路上 - ITeye博客](https://www.iteye.com/blog/watter1985-1736023)
 
 ## 使用
 
