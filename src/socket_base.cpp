@@ -1323,7 +1323,7 @@ int zmq::socket_base_t::send(msg_t *msg_, int flags_)
     msg_->reset_metadata();
 
     //  Try to send the message using method in each socket class
-    rc = xsend(msg_); // 发送消息，如果有socket 设置了 HWM，则触发 HWM 之后会设置错误码 EAGAIN，并返回 -1
+    rc = xsend(msg_); // 发送消息，如果有socket 设置了 HWM，则触发 HWM 之后会设置错误码 EAGAIN
     if (rc == 0)
     {
         return 0;
@@ -1349,7 +1349,7 @@ int zmq::socket_base_t::send(msg_t *msg_, int flags_)
 
     //  In case of non-blocking send we'll simply propagate
     //  the error - including EAGAIN - up the stack.
-    if ((flags_ & ZMQ_DONTWAIT) || options.sndtimeo == 0)
+    if ((flags_ & ZMQ_DONTWAIT) || options.sndtimeo == 0)   // 设置了 ZMQ_DONTWAIT 并且前面已经触发了 HWM 并设置了错误码 EAGAIN, 这里直接返回 -1
     {
         return -1;
     }
@@ -1368,7 +1368,7 @@ int zmq::socket_base_t::send(msg_t *msg_, int flags_)
         {
             return -1;
         }
-        rc = xsend(msg_); // 如果上一次 xsend 的时候触发了 EAGAIN，会在这里重新尝试发送消息(前提是没有设置 ZMQ_DONTWAIT 标志位)
+        rc = xsend(msg_); // 如果上一次 xsend 的时候触发了 EAGAIN, 这里会重新尝试发送消息(前提是没有设置 ZMQ_DONTWAIT 标志位). 这种操作会阻塞发送者，直到将这条消息发送出去或者超时
         if (rc == 0)
             break;
         if (unlikely(errno != EAGAIN))
